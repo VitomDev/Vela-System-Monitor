@@ -18,6 +18,8 @@ constexpr wchar_t kClassName[] = L"VelaSettings";
 enum ControlId {
     kTrayIconButton = 100,
     kIntervalButton,
+    kFloatingToggle,
+    kTaskbarToggle,
     kAutostartToggle,
     kCancel = IDCANCEL,
     kSave = IDOK,
@@ -112,6 +114,16 @@ void Layout(State& state) {
     labelRow(y, L"Update", kIntervalButton, fieldWidth, fieldHeight);
     y += row;
     text(padding, y, width - 2 * padding, scale(20), L"The panel updates every second while it is open.", TextStyle::Hint);
+    y += scale(20) + scale(kSectionGap);
+
+    text(padding, y, width - 2 * padding, scale(24), L"Always visible", TextStyle::Caption);
+    y += scale(24);
+    labelRow(y, L"Floating widget above other windows", kFloatingToggle, scale(44), scale(20));
+    y += row;
+    labelRow(y, L"Show on the taskbar", kTaskbarToggle, scale(44), scale(20));
+    y += row;
+    text(padding, y, width - 2 * padding, scale(20), L"CPU, memory and network speed. Drag the widget to move it.",
+         TextStyle::Hint);
     y += scale(20) + scale(kSectionGap);
 
     text(padding, y, width - 2 * padding, scale(24), L"General", TextStyle::Caption);
@@ -225,6 +237,8 @@ void DrawControl(State& state, const DRAWITEMSTRUCT& item) {
     switch (static_cast<int>(item.CtlID)) {
         case kTrayIconButton: DrawChoice(state, item, TrayIconName(state.settings.trayIcon)); break;
         case kIntervalButton: DrawChoice(state, item, IntervalName(state.settings.intervalSeconds)); break;
+        case kFloatingToggle: DrawToggle(state, item, state.settings.floating); break;
+        case kTaskbarToggle: DrawToggle(state, item, state.settings.taskbar); break;
         case kAutostartToggle: DrawToggle(state, item, state.autostart); break;
         case kSave: DrawButton(item, state.theme, fonts, ButtonStyle::Primary, nullptr, L"Save", radius); break;
         case kCancel: DrawButton(item, state.theme, fonts, ButtonStyle::Standard, nullptr, L"Cancel", radius); break;
@@ -295,10 +309,17 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
                 case kSave: Save(*state); break;
                 case kTrayIconButton: ChooseTrayIcon(*state); break;
                 case kIntervalButton: ChooseInterval(*state); break;
-                case kAutostartToggle:
-                    state->autostart = !state->autostart;
-                    InvalidateRect(GetDlgItem(window, kAutostartToggle), nullptr, FALSE);
+                case kFloatingToggle:
+                case kTaskbarToggle:
+                case kAutostartToggle: {
+                    const int id = LOWORD(wParam);
+                    bool& option = id == kFloatingToggle ? state->settings.floating
+                                   : id == kTaskbarToggle ? state->settings.taskbar
+                                                          : state->autostart;
+                    option = !option;
+                    InvalidateRect(GetDlgItem(window, id), nullptr, FALSE);
                     break;
+                }
             }
             return 0;
         case WM_DRAWITEM:
@@ -362,7 +383,7 @@ void ShowSettingsDialog(HINSTANCE instance, HWND owner, const Settings& current,
     state.window = window;
     openWindow = window;
 
-    for (int id : {kTrayIconButton, kIntervalButton, kAutostartToggle, kCancel, kSave}) {
+    for (int id : {kTrayIconButton, kIntervalButton, kFloatingToggle, kTaskbarToggle, kAutostartToggle, kCancel, kSave}) {
         HWND control = CreateWindowExW(0, L"BUTTON", L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW, 0, 0, 0, 0,
                                        window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)), instance, nullptr);
         EnableHover(control);

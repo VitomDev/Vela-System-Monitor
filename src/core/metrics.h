@@ -60,4 +60,15 @@ std::wstring FormatPercent(double percent);
 // The tray tooltip, which Windows limits to 127 characters.
 std::wstring TooltipText(const Snapshot& snapshot);
 
+// The two short lines of the floating widget and the taskbar view.
+struct MiniLines {
+    std::wstring usage;    // "CPU 23%  RAM 45%"
+    std::wstring network;  // "↓ 1.2 MB/s  ↑ 30 KB/s"
+
+    bool operator==(const MiniLines&) const = default;
+};
+MiniLines MiniText(const Snapshot& snapshot);
+// The widest lines MiniText can produce, so the views never change width.
+MiniLines WidestMiniText();
+
 }  // namespace vela

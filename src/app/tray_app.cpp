@@ -20,6 +20,8 @@ constexpr UINT kPanelIntervalMs = 1000;
 
 enum MenuId {
     kMenuOpen = 1,
+    kMenuFloating,
+    kMenuTaskbar,
     kMenuSettings,
     kMenuAutostart,
     kMenuExit,
@@ -54,8 +56,16 @@ bool TrayApp::Initialize(HINSTANCE instance, bool startedAtSignIn) {
     };
     panel_.onSettings = [this] { PostMessageW(window_, WM_COMMAND, kMenuSettings, 0); };
 
+    floating_.onMoved = [this](POINT position) {
+        settings_.floatingPosition = position;
+        settings_.Save();
+    };
+    floating_.onMenu = taskbarView_.onMenu = [this](POINT point) { ShowTrayMenu(point); };
+    floating_.onOpenPanel = taskbarView_.onOpenPanel = [this] { TogglePanel(); };
+
     snapshot_ = sampler_.Sample();
     AddTrayIcon();
+    ApplyMiniViews();
     RestartTimer();
 
     if (ConsumeFirstRun()) {
@@ -109,6 +119,9 @@ void TrayApp::UpdateTrayIcon(bool force) {
 void TrayApp::ShowTrayMenu(POINT point) {
     HMENU menu = CreatePopupMenu();
     AppendMenuW(menu, MF_STRING, kMenuOpen, L"Open Vela");
+    AppendMenuW(menu, MF_STRING | (settings_.floating ? MF_CHECKED : 0), kMenuFloating, L"Floating widget");
+    AppendMenuW(menu, MF_STRING | (settings_.taskbar ? MF_CHECKED : 0), kMenuTaskbar, L"Show on taskbar");
+    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(menu, MF_STRING, kMenuSettings, L"Settings");
     AppendMenuW(menu, MF_STRING | (IsAutostartEnabled() ? MF_CHECKED : 0), kMenuAutostart, L"Start with Windows");
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
@@ -121,6 +134,15 @@ void TrayApp::ShowTrayMenu(POINT point) {
     DestroyMenu(menu);
     switch (command) {
         case kMenuOpen: ShowPanel(); break;
+        case kMenuFloating:
+        case kMenuTaskbar: {
+            Settings settings = settings_;
+            bool& option = command == kMenuFloating ? settings.floating : settings.taskbar;
+            option = !option;
+            std::wstring error;
+            if (!ApplySettings(settings, IsAutostartEnabled(), error)) Notify(error);
+            break;
+        }
         case kMenuSettings: OpenSettings(); break;
         case kMenuAutostart: ToggleAutostart(); break;
         case kMenuExit: Exit(); break;
@@ -189,6 +211,25 @@ void TrayApp::Sample() {
         Shell_NotifyIconW(NIM_MODIFY, &data);
     }
     panel_.Update(snapshot_);
+    if (floating_.IsOpen() || taskbarView_.IsOpen()) {
+        const MiniLines lines = MiniText(snapshot_);
+        floating_.Update(lines);
+        taskbarView_.Update(lines);
+    }
+}
+
+void TrayApp::ApplyMiniViews() {
+    if (exiting_) return;
+    if (settings_.floating) {
+        floating_.Show(instance_, settings_.floatingPosition, MiniText(snapshot_));
+    } else {
+        floating_.Close();
+    }
+    if (!settings_.taskbar) {
+        taskbarView_.Close();
+    } else if (!taskbarView_.Show(instance_, MiniText(snapshot_))) {
+        Notify(L"Vela could not find the taskbar to show its numbers there.");
+    }
 }
 
 // --- Settings ----------------------------------------------------------------
@@ -204,6 +245,7 @@ bool TrayApp::ApplySettings(const Settings& settings, bool autostart, std::wstri
         return false;
     }
     UpdateTrayIcon(true);
+    ApplyMiniViews();
     RestartTimer();
     return true;
 }
@@ -227,6 +269,8 @@ void TrayApp::Exit() {
     exiting_ = true;
     panel_.onClosed = nullptr;
     panel_.Close();
+    floating_.Close();
+    taskbarView_.Close();
     KillTimer(window_, kSampleTimer);
     if (displayNotification_) UnregisterPowerSettingNotification(displayNotification_);
     displayNotification_ = nullptr;
@@ -248,7 +292,10 @@ LRESULT CALLBACK TrayApp::WindowProc(HWND window, UINT message, WPARAM wParam, L
 
 LRESULT TrayApp::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
     if (message == taskbarCreatedMessage_ && taskbarCreatedMessage_ != 0) {
-        AddTrayIcon();  // Explorer restarted.
+        // Explorer restarted: a new taskbar, so the taskbar view moves into it.
+        AddTrayIcon();
+        taskbarView_.Close();
+        ApplyMiniViews();
         return 0;
     }
     switch (message) {
@@ -291,6 +338,7 @@ LRESULT TrayApp::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
         case WM_DPICHANGED:
             // Light or dark taskbar, or a new icon size.
             UpdateTrayIcon(true);
+            taskbarView_.Redraw();
             return 0;
         case WM_CLOSE:  // Sent by the installer before upgrading or uninstalling.
         case WM_ENDSESSION:

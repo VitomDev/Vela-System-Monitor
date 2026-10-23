@@ -23,6 +23,7 @@ target_link_libraries(velacore PUBLIC user32 advapi32 iphlpapi)
 
 add_executable(Vela WIN32
     src/app/main.cpp
+    src/app/mini_views.cpp
     src/app/panel.cpp
     src/app/settings_dialog.cpp
     src/app/theme.cpp

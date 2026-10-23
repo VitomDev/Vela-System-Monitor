@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 Keep an eye on your PC without opening Task Manager. 👀  
-CPU and memory live in the tray icon, a tooltip sums up everything, and one click opens a small panel with CPU, memory, disk, network and battery.
+CPU and memory live in the tray icon, a tooltip sums up everything, and one click opens a small panel with CPU, memory, disk, network and battery. Want the numbers always in sight? Turn on the floating widget or show them right on the taskbar.
 
 Vela lives in the notification area and is built to stay out of the way: a monitor that eats your resources would defeat its own purpose. 🪶
 
@@ -15,6 +15,8 @@ Vela lives in the notification area and is built to stay out of the way: a monit
 - 📈 **Live tray icon**: two small bars for CPU and memory, or the CPU or memory percent as a number
 - 💬 **Tooltip**: hover the icon for CPU, RAM, disk, network speed and battery at a glance
 - 🪟 **Panel**: click the icon for a Windows 11–style flyout with every metric and its level bar
+- 📌 **Floating widget**: a tiny always-on-top box with CPU, RAM and network speed. Drag it anywhere, it remembers where
+- 🧷 **On the taskbar**: the same numbers right next to the clock, blended into your taskbar
 - 🧠 **CPU**: total usage, logical processors and uptime
 - 🧮 **Memory**: used and total RAM
 - 💽 **Disk**: space used on the system drive plus live read and write speed
@@ -24,7 +26,7 @@ Vela lives in the notification area and is built to stay out of the way: a monit
 - 😴 Stops sampling while the screen is off
 - 🔒 100% offline: nothing leaves your PC. No telemetry, no accounts
 - 🌙 Clean Windows 11 look that follows your light or dark theme and accent color
-- 🪶 Tiny: ~1.25 MB of memory and ~0.03% CPU while running, a ~2.1 MB installer, no .NET or Visual C++ runtime needed
+- 🪶 Tiny: ~1.3 MB of memory and ~0.03% CPU while running, a ~2.1 MB installer, no .NET or Visual C++ runtime needed
 - 🚦 Starts with Windows (you can turn it off)
 
 ---
@@ -50,6 +52,8 @@ Uninstalling (Settings → Apps) removes Vela, its startup entry and its setting
 | Quick look | Hover the tray icon |
 | Open the panel | Left-click the tray icon |
 | Close the panel | Click anywhere else, or `Esc` |
+| Floating widget | Right-click the tray icon → **Floating widget**. Drag to move, double-click for the panel, right-click for the menu |
+| Numbers on the taskbar | Right-click the tray icon → **Show on taskbar**. Click them for the panel, right-click for the menu |
 | Settings | ⚙️ in the panel, or right-click the tray icon → **Settings** |
 | Start with Windows | Right-click the tray icon → **Start with Windows** |
 | Exit | Right-click the tray icon → **Exit Vela** |
@@ -57,6 +61,8 @@ Uninstalling (Settings → Apps) removes Vela, its startup entry and its setting
 ### ⚙️ Settings
 
 - **Tray icon shows**: CPU and memory bars, CPU % or memory %
+- **Floating widget** above other windows, on or off
+- **Show on the taskbar**, on or off
 - **Update**: every 1, 2 (default) or 5 seconds. The panel always updates every second while it is open
 - **Start with Windows**
 
@@ -66,12 +72,12 @@ Uninstalling (Settings → Apps) removes Vela, its startup entry and its setting
 
 Vela reads the system counters every 2 seconds and only redraws the tray icon or a panel row when what you would see actually changes. The panel only exists while it is open.
 
-Measured on the development PC (Windows 11, default settings, panel closed):
+Measured on the development PC (Windows 11, default settings, panel closed, over 60 s):
 
 | | |
 | --- | --- |
-| Idle CPU (60 s) | 16 ms (~0.03%) |
-| Idle memory | 1.25 MB working set, 1.8 MB private |
+| Tray only | 16 ms CPU (~0.03%), 1.3–1.8 MB working set |
+| With floating widget and taskbar view | 31 ms CPU (~0.05%), 2.5 MB working set |
 | `Vela.exe` / installer | 0.24 MB / 2.1 MB |
 
 ---

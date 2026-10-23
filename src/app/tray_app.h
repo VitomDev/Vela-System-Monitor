@@ -1,5 +1,6 @@
 #pragma once
 
+#include "app/mini_views.h"
 #include "app/panel.h"
 #include "app/tray_icon.h"
 #include "core/sampler.h"
@@ -36,6 +37,8 @@ private:
     void Sample();
     void UpdateTrayIcon(bool force);
     void RestartTimer();
+    // Opens or closes the floating widget and the taskbar view as set.
+    void ApplyMiniViews();
 
     bool ApplySettings(const Settings& settings, bool autostart, std::wstring& error);
     void OpenSettings();
@@ -57,6 +60,8 @@ private:
     HICON currentIcon_ = nullptr;
     std::wstring tooltip_;
     Panel panel_;
+    FloatingWidget floating_;
+    TaskbarView taskbarView_;
 };
 
 }  // namespace vela

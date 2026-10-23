@@ -3,6 +3,7 @@
 #include <windows.h>
 
 #include <array>
+#include <optional>
 #include <string>
 
 namespace vela {
@@ -25,6 +26,11 @@ inline constexpr std::array<DWORD, 3> kIntervals{1, 2, 5};
 struct Settings {
     TrayIcon trayIcon = TrayIcon::Bars;
     DWORD intervalSeconds = 2;
+    // The always-on-top mini widget and the view on the taskbar.
+    bool floating = false;
+    bool taskbar = false;
+    // Where the widget was left; none until it is first moved.
+    std::optional<POINT> floatingPosition;
 
     // `keyPath` is relative to HKEY_CURRENT_USER; tests use a scratch key.
     static Settings Load(const wchar_t* keyPath = kSettingsKey);

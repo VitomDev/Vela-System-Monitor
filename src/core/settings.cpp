@@ -38,6 +38,12 @@ Settings Settings::Load(const wchar_t* keyPath) {
             if (value == interval) settings.intervalSeconds = value;
         }
     }
+    if (ReadDword(key, L"Floating", value)) settings.floating = value != 0;
+    if (ReadDword(key, L"Taskbar", value)) settings.taskbar = value != 0;
+    DWORD x = 0, y = 0;
+    if (ReadDword(key, L"FloatingX", x) && ReadDword(key, L"FloatingY", y)) {
+        settings.floatingPosition = POINT{static_cast<LONG>(x), static_cast<LONG>(y)};
+    }
     RegCloseKey(key);
     return settings;
 }
@@ -47,7 +53,13 @@ bool Settings::Save(const wchar_t* keyPath) const {
     if (RegCreateKeyExW(HKEY_CURRENT_USER, keyPath, 0, nullptr, 0, KEY_WRITE, nullptr, &key, nullptr) != ERROR_SUCCESS) {
         return false;
     }
-    const bool saved = WriteDword(key, L"TrayIcon", static_cast<DWORD>(trayIcon)) && WriteDword(key, L"Interval", intervalSeconds);
+    bool saved = WriteDword(key, L"TrayIcon", static_cast<DWORD>(trayIcon)) && WriteDword(key, L"Interval", intervalSeconds) &&
+                 WriteDword(key, L"Floating", floating ? 1 : 0) && WriteDword(key, L"Taskbar", taskbar ? 1 : 0);
+    if (saved && floatingPosition) {
+        // Stored as DWORDs; negative coordinates (monitors left of the main one) round-trip.
+        saved = WriteDword(key, L"FloatingX", static_cast<DWORD>(floatingPosition->x)) &&
+                WriteDword(key, L"FloatingY", static_cast<DWORD>(floatingPosition->y));
+    }
     RegCloseKey(key);
     return saved;
 }

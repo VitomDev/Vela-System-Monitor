@@ -154,6 +154,20 @@ TEST(TooltipSummarizesAndFitsTheLimit) {
     CHECK(TooltipText(s).size() <= 127);
 }
 
+TEST(MiniTextFitsTheWidestLines) {
+    const MiniLines lines = MiniText(SampleSnapshot());
+    CHECK(lines.usage == L"CPU 23%  RAM 38%");
+    CHECK(lines.network == L"↓ 1.5 KB/s  ↑ 0 B/s");
+    // The views are sized for the widest text, so they never resize while running.
+    Snapshot busy = SampleSnapshot();
+    busy.cpuPercent = 100;
+    busy.memoryUsed = busy.memoryTotal;
+    busy.networkDown = busy.networkUp = 999 * 1024;
+    const MiniLines widest = WidestMiniText();
+    CHECK(MiniText(busy).usage.size() <= widest.usage.size());
+    CHECK(MiniText(busy).network.size() <= widest.network.size());
+}
+
 TEST(SamplerReadsPlausibleValues) {
     Sampler sampler;
     const Snapshot first = sampler.Sample();
@@ -235,10 +249,16 @@ TEST(SettingsPersist) {
     CHECK(settings.intervalSeconds == 2);
 
     settings.trayIcon = TrayIcon::MemoryPercent;
+    CHECK(!settings.floating && !settings.taskbar && !settings.floatingPosition);
     settings.intervalSeconds = 5;
+    settings.floating = settings.taskbar = true;
+    // A monitor left of the main one has negative coordinates.
+    settings.floatingPosition = POINT{-1500, 40};
     CHECK(settings.Save(kTestSettingsKey));
     const Settings loaded = Settings::Load(kTestSettingsKey);
     CHECK(loaded.trayIcon == TrayIcon::MemoryPercent && loaded.intervalSeconds == 5);
+    CHECK(loaded.floating && loaded.taskbar);
+    CHECK(loaded.floatingPosition && loaded.floatingPosition->x == -1500 && loaded.floatingPosition->y == 40);
     RegDeleteTreeW(HKEY_CURRENT_USER, kTestSettingsKey);
 }
 

@@ -99,4 +99,11 @@ std::wstring TooltipText(const Snapshot& s) {
     return text;
 }
 
+MiniLines MiniText(const Snapshot& s) {
+    return {L"CPU " + FormatPercent(s.cpuPercent) + L"  RAM " + std::to_wstring(s.MemoryPercent()) + L"%",
+            L"↓ " + FormatRate(s.networkDown) + L"  ↑ " + FormatRate(s.networkUp)};
+}
+
+MiniLines WidestMiniText() { return {L"CPU 100%  RAM 100%", L"↓ 888 MB/s  ↑ 888 MB/s"}; }
+
 }  // namespace vela
