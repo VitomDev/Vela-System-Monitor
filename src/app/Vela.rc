@@ -1,0 +1,32 @@
+#include <windows.h>
+#include "resource.h"
+#include "../version.h"
+
+IDI_VELA ICON "../../assets/vela.ico"
+CREATEPROCESS_MANIFEST_RESOURCE_ID RT_MANIFEST "Vela.manifest"
+
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION VELA_VERSION_MAJOR, VELA_VERSION_MINOR, VELA_VERSION_PATCH, 0
+PRODUCTVERSION VELA_VERSION_MAJOR, VELA_VERSION_MINOR, VELA_VERSION_PATCH, 0
+FILEOS VOS_NT_WINDOWS32
+FILETYPE VFT_APP
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "CompanyName", "VitomDev"
+            VALUE "FileDescription", "Vela System Monitor"
+            VALUE "FileVersion", VELA_VERSION_STRING
+            VALUE "InternalName", "Vela"
+            VALUE "LegalCopyright", "Copyright (c) 2026 VitomDev. MIT License."
+            VALUE "OriginalFilename", "Vela.exe"
+            VALUE "ProductName", "Vela System Monitor"
+            VALUE "ProductVersion", VELA_VERSION_STRING
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END
