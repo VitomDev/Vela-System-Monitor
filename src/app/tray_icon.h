@@ -9,10 +9,10 @@ namespace vela {
 // What a tray icon shows, quantized to what can actually be seen at its
 // size: the icon is only redrawn when this changes.
 struct TrayIconState {
-    TrayIcon style = TrayIcon::Bars;
+    TrayIcon style = TrayIcon::Logo;
     int size = 0;
     bool lightTaskbar = false;
-    int cpu = 0;     // Bar height in pixels, or the percent shown
+    int cpu = 0;     // The percent shown
     int memory = 0;
     bool cpuHigh = false;  // Drawn in a warning color
     bool memoryHigh = false;

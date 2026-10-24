@@ -207,15 +207,11 @@ TEST(PanelRowsDescribeTheSnapshot) {
 }
 
 TEST(TrayIconOnlyChangesWhenVisible) {
-    // A 16 px icon has 10 px bars: small changes look the same.
-    const TrayIconState a = MakeTrayIconState(TrayIcon::Bars, 16, false, 41.0, 50);
-    const TrayIconState b = MakeTrayIconState(TrayIcon::Bars, 16, false, 44.0, 52);
-    const TrayIconState c = MakeTrayIconState(TrayIcon::Bars, 16, false, 80.0, 50);
-    CHECK(a == b);
-    CHECK(!(a == c));
-    // Idle still shows a sliver; overload turns the warning color on.
-    CHECK(MakeTrayIconState(TrayIcon::Bars, 16, false, 0, 0).cpu == 1);
-    CHECK(MakeTrayIconState(TrayIcon::Bars, 16, false, 95, 0).cpuHigh);
+    // The logo never changes with the readings.
+    CHECK(MakeTrayIconState(TrayIcon::Logo, 16, false, 5.0, 10) == MakeTrayIconState(TrayIcon::Logo, 16, false, 99.0, 95));
+    CHECK(!(MakeTrayIconState(TrayIcon::Logo, 16, false, 0, 0) == MakeTrayIconState(TrayIcon::Logo, 24, false, 0, 0)));
+    // Overload turns the warning color on.
+    CHECK(MakeTrayIconState(TrayIcon::CpuPercent, 16, false, 95, 0).cpuHigh);
     // Numbers change with every percent, and ignore the other metric.
     const TrayIconState cpu = MakeTrayIconState(TrayIcon::CpuPercent, 16, false, 41.0, 50);
     CHECK(cpu.cpu == 41 && cpu.memory == 0);
@@ -245,7 +241,7 @@ TEST(TrayIconsAreCreatedAtTheRequestedSize) {
 TEST(SettingsPersist) {
     RegDeleteTreeW(HKEY_CURRENT_USER, kTestSettingsKey);
     Settings settings = Settings::Load(kTestSettingsKey);
-    CHECK(settings.trayIcon == TrayIcon::Bars);
+    CHECK(settings.trayIcon == TrayIcon::Logo);
     CHECK(settings.intervalSeconds == 2);
 
     settings.trayIcon = TrayIcon::MemoryPercent;
@@ -270,7 +266,7 @@ TEST(InvalidStoredSettingsFallBackToDefaults) {
     RegSetValueExW(key, L"Interval", 0, REG_DWORD, reinterpret_cast<const BYTE*>(&badInterval), sizeof(badInterval));
     RegCloseKey(key);
     const Settings loaded = Settings::Load(kTestSettingsKey);
-    CHECK(loaded.trayIcon == TrayIcon::Bars);
+    CHECK(loaded.trayIcon == TrayIcon::Logo);
     CHECK(loaded.intervalSeconds == 2);
     RegDeleteTreeW(HKEY_CURRENT_USER, kTestSettingsKey);
 }

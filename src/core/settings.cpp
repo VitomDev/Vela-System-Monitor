@@ -17,7 +17,7 @@ bool WriteDword(HKEY key, const wchar_t* name, DWORD value) {
 
 const wchar_t* TrayIconName(TrayIcon icon) {
     switch (icon) {
-        case TrayIcon::Bars: return L"CPU and memory bars";
+        case TrayIcon::Logo: return L"Vela logo";
         case TrayIcon::CpuPercent: return L"CPU %";
         case TrayIcon::MemoryPercent: return L"Memory %";
     }

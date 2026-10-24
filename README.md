@@ -12,7 +12,7 @@ Vela lives in the notification area and is built to stay out of the way: a monit
 
 ## 🚀 Features
 
-- 📈 **Live tray icon**: two small bars for CPU and memory, or the CPU or memory percent as a number
+- 📈 **Tray icon**: the Vela logo, or the live CPU or memory percent as a number
 - 💬 **Tooltip**: hover the icon for CPU, RAM, disk, network speed and battery at a glance
 - 🪟 **Panel**: click the icon for a Windows 11–style flyout with every metric and its level bar
 - 📌 **Floating widget**: a tiny always-on-top box with CPU, RAM and network speed. Drag it anywhere, it remembers where
@@ -60,7 +60,7 @@ Uninstalling (Settings → Apps) removes Vela, its startup entry and its setting
 
 ### ⚙️ Settings
 
-- **Tray icon shows**: CPU and memory bars, CPU % or memory %
+- **Tray icon shows**: Vela logo, CPU % or memory %
 - **Floating widget** above other windows, on or off
 - **Show on the taskbar**, on or off
 - **Update**: every 1, 2 (default) or 5 seconds. The panel always updates every second while it is open

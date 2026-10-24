@@ -35,5 +35,7 @@ target_link_libraries(Vela PRIVATE velacore gdi32 shell32 comctl32 dwmapi uxthem
 # The manifest is embedded through Vela.rc.
 target_link_options(Vela PRIVATE /MANIFEST:NO)
 
-add_executable(VelaTests tests/tests.cpp src/app/panel.cpp src/app/theme.cpp src/app/tray_icon.cpp)
+# Vela.rc gives the tests the logo used as the tray icon.
+add_executable(VelaTests tests/tests.cpp src/app/panel.cpp src/app/theme.cpp src/app/tray_icon.cpp src/app/Vela.rc)
 target_link_libraries(VelaTests PRIVATE velacore gdi32 comctl32 dwmapi uxtheme)
+target_link_options(VelaTests PRIVATE /MANIFEST:NO)

@@ -16,15 +16,15 @@ inline constexpr wchar_t kStartupApprovedKey[] =
     L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\StartupApproved\\Run";
 
 // What the tray icon draws.
-enum class TrayIcon : DWORD { Bars = 0, CpuPercent = 1, MemoryPercent = 2 };
-inline constexpr std::array kTrayIcons{TrayIcon::Bars, TrayIcon::CpuPercent, TrayIcon::MemoryPercent};
+enum class TrayIcon : DWORD { Logo = 0, CpuPercent = 1, MemoryPercent = 2 };
+inline constexpr std::array kTrayIcons{TrayIcon::Logo, TrayIcon::CpuPercent, TrayIcon::MemoryPercent};
 const wchar_t* TrayIconName(TrayIcon icon);
 
 // How often the counters are read while the panel is closed.
 inline constexpr std::array<DWORD, 3> kIntervals{1, 2, 5};
 
 struct Settings {
-    TrayIcon trayIcon = TrayIcon::Bars;
+    TrayIcon trayIcon = TrayIcon::Logo;
     DWORD intervalSeconds = 2;
     // The always-on-top mini widget and the view on the taskbar.
     bool floating = false;
