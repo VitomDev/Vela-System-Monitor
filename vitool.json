@@ -1,0 +1,9 @@
+{
+  "appId": "{9E3B6A14-2C7D-4F58-B1A9-6D0E8F2C4B37}",
+  "name": "Vela System Monitor",
+  "category": "System",
+  "icon": "assets/vela.png",
+  "screenshots": [],
+  "installer": "VelaSetup.exe",
+  "exe": "Vela.exe"
+}
