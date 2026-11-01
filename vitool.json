@@ -3,7 +3,9 @@
   "name": "Vela System Monitor",
   "category": "System",
   "icon": "assets/vela.png",
-  "screenshots": [],
+  "screenshots": [
+    "assets/screenshots/screenshot-1.png"
+  ],
   "installer": "VelaSetup.exe",
   "exe": "Vela.exe",
   "settings": [
