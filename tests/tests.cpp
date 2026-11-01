@@ -324,6 +324,20 @@ TEST(TrayIconsAreCreatedAtTheRequestedSize) {
     }
 }
 
+TEST(TaskbarViewSitsInItsSpot) {
+    const TaskbarRoom room{170, 2000};
+    CHECK(TaskbarViewLeft(TaskbarSpot::Clock, 0, 100, room) == 1900);
+    CHECK(TaskbarViewLeft(TaskbarSpot::Left, 0, 100, room) == 170);
+    CHECK(TaskbarViewLeft(TaskbarSpot::Custom, 800, 100, room) == 800);
+    // Never outside the room, even on a smaller taskbar than when it was dropped.
+    CHECK(TaskbarViewLeft(TaskbarSpot::Custom, 5000, 100, room) == 1900);
+    CHECK(TaskbarViewLeft(TaskbarSpot::Custom, 0, 100, room) == 170);
+
+    CHECK(SnapTaskbarDrop(180, 100, room, 24) == TaskbarSpot::Left);
+    CHECK(SnapTaskbarDrop(1890, 100, room, 24) == TaskbarSpot::Clock);
+    CHECK(SnapTaskbarDrop(900, 100, room, 24) == TaskbarSpot::Custom);
+}
+
 // --- Settings and Start with Windows ---------------------------------------------------
 
 TEST(SettingsPersist) {
@@ -342,12 +356,16 @@ TEST(SettingsPersist) {
     settings.floating = settings.taskbar = true;
     // A monitor left of the main one has negative coordinates.
     settings.floatingPosition = POINT{-1500, 40};
+    CHECK(settings.taskbarSpot == TaskbarSpot::Clock);
+    settings.taskbarSpot = TaskbarSpot::Custom;
+    settings.taskbarOffset = 640;
     CHECK(settings.Save(kTestSettingsKey));
     const Settings loaded = Settings::Load(kTestSettingsKey);
     CHECK(loaded.trayIcon == TrayIcon::MemoryPercent && loaded.intervalSeconds == 5);
     CHECK(loaded.floating && loaded.taskbar);
     CHECK(loaded.panelMetrics == (metric::kCpu | metric::kBattery) && loaded.miniMetrics == metric::kDisk);
     CHECK(loaded.floatingPosition && loaded.floatingPosition->x == -1500 && loaded.floatingPosition->y == 40);
+    CHECK(loaded.taskbarSpot == TaskbarSpot::Custom && loaded.taskbarOffset == 640);
     RegDeleteTreeW(HKEY_CURRENT_USER, kTestSettingsKey);
 }
 

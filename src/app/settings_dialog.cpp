@@ -21,6 +21,7 @@ enum ControlId {
     kIntervalButton,
     kFloatingToggle,
     kTaskbarToggle,
+    kTaskbarSpotButton,
     kAutostartToggle,
     kCancel = IDCANCEL,
     kSave = IDOK,
@@ -78,6 +79,15 @@ struct State {
 HWND openWindow = nullptr;
 
 int Scale(HWND window, int value) { return MulDiv(value, GetDpiForWindow(window), 96); }
+
+const wchar_t* TaskbarSpotName(TaskbarSpot spot) {
+    switch (spot) {
+        case TaskbarSpot::Clock: return L"Next to the clock";
+        case TaskbarSpot::Left: return L"At the left";
+        case TaskbarSpot::Custom: return L"Where I dragged it";
+    }
+    return L"";
+}
 
 std::wstring IntervalName(DWORD seconds) { return seconds == 1 ? L"Every second" : L"Every " + std::to_wstring(seconds) + L" seconds"; }
 
@@ -156,6 +166,8 @@ void Layout(State& state) {
     labelRow(y, L"Floating widget above other windows", kFloatingToggle, scale(44), scale(20));
     y += row;
     labelRow(y, L"Show on the taskbar", kTaskbarToggle, scale(44), scale(20));
+    y += row;
+    labelRow(y, L"Position on the taskbar", kTaskbarSpotButton, fieldWidth, fieldHeight);
     y += row;
     y += scale(kSectionGap);
 
@@ -318,6 +330,7 @@ void DrawControl(State& state, const DRAWITEMSTRUCT& item) {
         case kIntervalButton: DrawChoice(state, item, IntervalName(state.settings.intervalSeconds)); break;
         case kFloatingToggle: DrawToggle(state, item, state.settings.floating); break;
         case kTaskbarToggle: DrawToggle(state, item, state.settings.taskbar); break;
+        case kTaskbarSpotButton: DrawChoice(state, item, TaskbarSpotName(state.settings.taskbarSpot)); break;
         case kAutostartToggle: DrawToggle(state, item, state.autostart); break;
         case kSave: DrawButton(item, state.theme, fonts, ButtonStyle::Primary, nullptr, L"Save", radius); break;
         case kCancel: DrawButton(item, state.theme, fonts, ButtonStyle::Standard, nullptr, L"Cancel", radius); break;
@@ -373,6 +386,20 @@ void ChooseInterval(State& state) {
     if (chosen >= 0) state.settings.intervalSeconds = kIntervals[chosen];
 }
 
+void ChooseTaskbarSpot(State& state) {
+    // "Where I dragged it" is only offered once there is such a place.
+    std::vector<TaskbarSpot> spots{TaskbarSpot::Clock, TaskbarSpot::Left};
+    if (state.settings.taskbarSpot == TaskbarSpot::Custom) spots.push_back(TaskbarSpot::Custom);
+    std::vector<std::wstring> labels;
+    size_t checked = 0;
+    for (size_t i = 0; i < spots.size(); ++i) {
+        labels.push_back(TaskbarSpotName(spots[i]));
+        if (spots[i] == state.settings.taskbarSpot) checked = i;
+    }
+    const int chosen = ShowChoiceMenu(state, kTaskbarSpotButton, labels, checked);
+    if (chosen >= 0) state.settings.taskbarSpot = spots[chosen];
+}
+
 LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
     if (message == WM_NCCREATE) {
         SetWindowLongPtrW(window, GWLP_USERDATA,
@@ -401,6 +428,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
                 case kSave: Save(*state); break;
                 case kTrayIconButton: ChooseTrayIcon(*state); break;
                 case kIntervalButton: ChooseInterval(*state); break;
+                case kTaskbarSpotButton: ChooseTaskbarSpot(*state); break;
                 case kFloatingToggle:
                 case kTaskbarToggle:
                 case kAutostartToggle: {
@@ -479,7 +507,7 @@ void ShowSettingsDialog(HINSTANCE instance, HWND owner, const Settings& current,
     std::vector<int> ids{kTrayIconButton, kIntervalButton};
     for (int i = 0; i < kChipCount; ++i) ids.push_back(kPanelChipFirst + i);
     for (int i = 0; i < kChipCount; ++i) ids.push_back(kMiniChipFirst + i);
-    ids.insert(ids.end(), {kFloatingToggle, kTaskbarToggle, kAutostartToggle, kCancel, kSave});
+    ids.insert(ids.end(), {kFloatingToggle, kTaskbarToggle, kTaskbarSpotButton, kAutostartToggle, kCancel, kSave});
     for (int id : ids) {
         HWND control = CreateWindowExW(0, L"BUTTON", L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW, 0, 0, 0, 0,
                                        window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)), instance, nullptr);

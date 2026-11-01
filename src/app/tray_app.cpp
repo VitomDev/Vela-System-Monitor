@@ -61,6 +61,11 @@ bool TrayApp::Initialize(HINSTANCE instance, bool startedAtSignIn) {
         settings_.floatingPosition = position;
         settings_.Save();
     };
+    taskbarView_.onPlaced = [this](TaskbarSpot spot, int offset) {
+        settings_.taskbarSpot = spot;
+        settings_.taskbarOffset = offset;
+        settings_.Save();
+    };
     floating_.onMenu = taskbarView_.onMenu = [this](POINT point) { ShowTrayMenu(point); };
     floating_.onOpenPanel = taskbarView_.onOpenPanel = [this] { TogglePanel(); };
 
@@ -241,7 +246,7 @@ void TrayApp::ApplyMiniViews() {
     }
     if (!settings_.taskbar) {
         taskbarView_.Close();
-    } else if (!taskbarView_.Show(instance_, lines, widest)) {
+    } else if (!taskbarView_.Show(instance_, lines, widest, settings_.taskbarSpot, settings_.taskbarOffset)) {
         Notify(L"Vela could not find the taskbar to show its numbers there.");
     }
 }

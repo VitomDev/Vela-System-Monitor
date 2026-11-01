@@ -1,5 +1,7 @@
 #include "core/settings.h"
 
+#include <algorithm>
+
 namespace vela {
 
 namespace {
@@ -42,6 +44,10 @@ Settings Settings::Load(const wchar_t* keyPath) {
     if (ReadDword(key, L"MiniMetrics", value) && (value & metric::kAll)) settings.miniMetrics = value & metric::kAll;
     if (ReadDword(key, L"Floating", value)) settings.floating = value != 0;
     if (ReadDword(key, L"Taskbar", value)) settings.taskbar = value != 0;
+    if (ReadDword(key, L"TaskbarSpot", value) && value <= static_cast<DWORD>(TaskbarSpot::Custom)) {
+        settings.taskbarSpot = static_cast<TaskbarSpot>(value);
+    }
+    if (ReadDword(key, L"TaskbarOffset", value)) settings.taskbarOffset = static_cast<int>(std::min<DWORD>(value, 10000));
     DWORD x = 0, y = 0;
     if (ReadDword(key, L"FloatingX", x) && ReadDword(key, L"FloatingY", y)) {
         settings.floatingPosition = POINT{static_cast<LONG>(x), static_cast<LONG>(y)};
@@ -57,7 +63,9 @@ bool Settings::Save(const wchar_t* keyPath) const {
     }
     bool saved = WriteDword(key, L"TrayIcon", static_cast<DWORD>(trayIcon)) && WriteDword(key, L"Interval", intervalSeconds) &&
                  WriteDword(key, L"PanelMetrics", panelMetrics) && WriteDword(key, L"MiniMetrics", miniMetrics) &&
-                 WriteDword(key, L"Floating", floating ? 1 : 0) && WriteDword(key, L"Taskbar", taskbar ? 1 : 0);
+                 WriteDword(key, L"Floating", floating ? 1 : 0) && WriteDword(key, L"Taskbar", taskbar ? 1 : 0) &&
+                 WriteDword(key, L"TaskbarSpot", static_cast<DWORD>(taskbarSpot)) &&
+                 WriteDword(key, L"TaskbarOffset", static_cast<DWORD>(std::max(taskbarOffset, 0)));
     if (saved && floatingPosition) {
         // Stored as DWORDs; negative coordinates (monitors left of the main one) round-trip.
         saved = WriteDword(key, L"FloatingX", static_cast<DWORD>(floatingPosition->x)) &&

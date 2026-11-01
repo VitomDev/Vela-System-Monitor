@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/metrics.h"
+#include "core/taskbar_place.h"
 
 #include <windows.h>
 
@@ -34,6 +35,10 @@ struct Settings {
     // The always-on-top mini widget and the view on the taskbar.
     bool floating = false;
     bool taskbar = false;
+    // Where the taskbar view sits; `taskbarOffset` is the left edge in
+    // 96-DPI pixels from the taskbar's left, used when it was dropped elsewhere.
+    TaskbarSpot taskbarSpot = TaskbarSpot::Clock;
+    int taskbarOffset = 0;
     // Where the widget was left; none until it is first moved.
     std::optional<POINT> floatingPosition;
 

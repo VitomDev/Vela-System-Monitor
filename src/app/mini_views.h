@@ -2,6 +2,7 @@
 
 #include "app/theme.h"
 #include "core/metrics.h"
+#include "core/taskbar_place.h"
 
 #include <windows.h>
 
@@ -37,17 +38,21 @@ private:
     HFONT font_ = nullptr;
 };
 
-// The mini lines drawn on the taskbar, just left of the notification area.
-// Windows 11 has no API for taskbar widgets, so this is a transparent window
-// placed inside the taskbar, the way other taskbar monitors do it.
+// The mini lines drawn on the taskbar, next to the clock, at the left or
+// wherever they are dragged. Windows 11 has no API for taskbar widgets, so this
+// is a transparent window placed inside the taskbar, the way other taskbar
+// monitors do it.
 class TaskbarView {
 public:
     std::function<void(POINT)> onMenu;
     std::function<void()> onOpenPanel;
+    // After a drag: the new spot and, for Custom, the 96-DPI offset.
+    std::function<void(TaskbarSpot, int)> onPlaced;
 
     bool IsOpen() const { return window_ != nullptr; }
     // False when the taskbar could not be found.
-    bool Show(HINSTANCE instance, const MiniLines& lines, const MiniLines& widest);
+    bool Show(HINSTANCE instance, const MiniLines& lines, const MiniLines& widest, TaskbarSpot spot, int offset);
+    void SetSpot(TaskbarSpot spot, int offset);
     void Update(const MiniLines& lines, const MiniLines& widest);
     // After a theme change, which child windows are not told about.
     void Redraw() {
@@ -61,8 +66,17 @@ private:
     // Follows the notification area as it grows or the taskbar moves.
     void Place();
     void Render();
+    TaskbarRoom Room(const RECT& taskbar, UINT dpi) const;
+    bool IsHorizontal() const;
 
     HWND window_ = nullptr;
+    TaskbarSpot spot_ = TaskbarSpot::Clock;
+    int offset_ = 0;
+    // Dragging: where the press was (screen x) and the view's left then.
+    bool pressed_ = false;
+    bool dragging_ = false;
+    int pressX_ = 0;
+    int pressLeft_ = 0;
     HWND taskbar_ = nullptr;
     MiniLines lines_;
     MiniLines widest_;

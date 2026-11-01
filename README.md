@@ -17,7 +17,7 @@ Vela lives in the notification area and is built to stay out of the way: a monit
 - 🪟 **Panel**: click the icon for a Windows 11–style flyout with every metric and its level bar
 - 🔎 **Top processes**: click CPU, Memory or Disk in the panel to see the 10 apps using the most of it, updated every second
 - 📌 **Floating widget**: a tiny always-on-top box with CPU, RAM and network speed. Drag it anywhere, it remembers where
-- 🧷 **On the taskbar**: the same numbers right next to the clock, blended into your taskbar
+- 🧷 **On the taskbar**: the same numbers blended into your taskbar, next to the clock, at the left or anywhere you drag them
 - 🎛️ **Show only what you care about**: pick which metrics appear in the panel, and which on the taskbar and floating widget
 - 🧠 **CPU**: total usage, logical processors and uptime
 - 🧮 **Memory**: used and total RAM
@@ -58,7 +58,7 @@ Uninstalling (Settings → Apps) removes Vela, its startup entry and its setting
 | Close the panel | Click anywhere else, or `Esc` |
 | Top 10 processes | Click **CPU**, **Memory** or **Disk** in the panel; click the title, `Esc` or `Backspace` to go back |
 | Floating widget | Right-click the tray icon → **Floating widget**. Drag to move, double-click for the panel, right-click for the menu |
-| Numbers on the taskbar | Right-click the tray icon → **Show on taskbar**. Click them for the panel, right-click for the menu |
+| Numbers on the taskbar | Right-click the tray icon → **Show on taskbar**. Click them for the panel, drag them along the taskbar to move them, right-click for the menu |
 | Settings | ⚙️ in the panel, or right-click the tray icon → **Settings** |
 | Start with Windows | Right-click the tray icon → **Start with Windows** |
 | Exit | Right-click the tray icon → **Exit Vela** |
@@ -68,7 +68,7 @@ Uninstalling (Settings → Apps) removes Vela, its startup entry and its setting
 - **Tray icon shows**: Vela logo, CPU % or memory %
 - **What to show**: CPU, memory, disk, network and battery, chosen separately for the panel and for the taskbar and floating widget
 - **Floating widget** above other windows, on or off
-- **Show on the taskbar**, on or off
+- **Show on the taskbar**, on or off, and its **position**: next to the clock or at the left (dragging it there works too)
 - **Update**: every 1, 2 (default) or 5 seconds. The panel always updates every second while it is open
 - **Start with Windows**
 

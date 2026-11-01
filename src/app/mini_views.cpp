@@ -5,6 +5,7 @@
 #include <windowsx.h>
 
 #include <algorithm>
+#include <cstdlib>
 
 namespace vela {
 
@@ -39,6 +40,27 @@ void DrawLines(HDC dc, const MiniLines& lines, const RECT& rect, UINT align) {
     RECT bottom{rect.left, top.bottom, rect.right, rect.bottom};
     DrawTextW(dc, lines.first.c_str(), -1, &top, flags | DT_BOTTOM);
     DrawTextW(dc, lines.second.c_str(), -1, &bottom, flags | DT_TOP);
+}
+
+DWORD ReadExplorerOption(const wchar_t* name, DWORD fallback) {
+    DWORD value = fallback;
+    DWORD size = sizeof(value);
+    RegGetValueW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced", name,
+                 RRF_RT_REG_DWORD, nullptr, &value, &size);
+    return value;
+}
+
+// Windows 11 centers the taskbar icons and puts the Widgets button (weather)
+// at the left; with left-aligned icons, or on Windows 10, Start is there.
+// Both are drawn by Explorer itself, so their width is an estimate.
+int LeftReserved(UINT dpi) {
+    OSVERSIONINFOW version{sizeof(version)};
+    using GetVersionFn = LONG(WINAPI*)(OSVERSIONINFOW*);
+    static const auto getVersion =
+        reinterpret_cast<GetVersionFn>(GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "RtlGetVersion"));
+    const bool windows11 = getVersion && getVersion(&version) == 0 && version.dwBuildNumber >= 22000;
+    if (!windows11 || ReadExplorerOption(L"TaskbarAl", 1) == 0) return Scale(dpi, 56);
+    return Scale(dpi, ReadExplorerOption(L"TaskbarDa", 1) != 0 ? 170 : 8);
 }
 
 ATOM RegisterClassOnce(HINSTANCE instance, const wchar_t* name, WNDPROC proc) {
@@ -194,7 +216,9 @@ LRESULT FloatingWidget::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam
 
 // --- Taskbar view ------------------------------------------------------------------
 
-bool TaskbarView::Show(HINSTANCE instance, const MiniLines& lines, const MiniLines& widest) {
+bool TaskbarView::Show(HINSTANCE instance, const MiniLines& lines, const MiniLines& widest, TaskbarSpot spot, int offset) {
+    spot_ = spot;
+    offset_ = offset;
     if (window_) {
         Update(lines, widest);
         return true;
@@ -220,7 +244,29 @@ bool TaskbarView::Show(HINSTANCE instance, const MiniLines& lines, const MiniLin
     return true;
 }
 
+void TaskbarView::SetSpot(TaskbarSpot spot, int offset) {
+    spot_ = spot;
+    offset_ = offset;
+    if (window_ && !pressed_) Place();
+}
+
+bool TaskbarView::IsHorizontal() const {
+    RECT taskbar;
+    GetWindowRect(taskbar_, &taskbar);
+    return taskbar.right - taskbar.left >= taskbar.bottom - taskbar.top;
+}
+
+TaskbarRoom TaskbarView::Room(const RECT& taskbar, UINT dpi) const {
+    RECT notify;
+    HWND notifyWindow = FindWindowExW(taskbar_, nullptr, L"TrayNotifyWnd", nullptr);
+    if (!notifyWindow || !GetWindowRect(notifyWindow, &notify)) notify = {taskbar.right, taskbar.top, taskbar.right, taskbar.bottom};
+    const int end = notify.left - taskbar.left - Scale(dpi, 4);
+    return {std::min(LeftReserved(dpi), end), end};
+}
+
 void TaskbarView::Place() {
+    // While dragged, the mouse decides.
+    if (pressed_ && dragging_) return;
     RECT taskbar, notify;
     GetWindowRect(taskbar_, &taskbar);
     HWND notifyWindow = FindWindowExW(taskbar_, nullptr, L"TrayNotifyWnd", nullptr);
@@ -239,7 +285,7 @@ void TaskbarView::Place() {
     POINT position;
     if (taskbar.right - taskbar.left >= taskbar.bottom - taskbar.top) {
         size.cy = std::max<LONG>(size.cy, taskbar.bottom - taskbar.top);
-        position = {notify.left - taskbar.left - size.cx - Scale(dpi, 4), 0};
+        position = {TaskbarViewLeft(spot_, Scale(dpi, offset_), size.cx, Room(taskbar, dpi)), 0};
     } else {
         // Vertical taskbar: above the notification area.
         size.cx = taskbar.right - taskbar.left;
@@ -338,8 +384,61 @@ LRESULT TaskbarView::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
     switch (message) {
         case WM_MOUSEACTIVATE:
             return MA_NOACTIVATE;
-        case WM_LBUTTONUP:
-            if (onOpenPanel) onOpenPanel();
+        case WM_LBUTTONDOWN: {
+            // A click opens the panel; a drag along the taskbar moves the view.
+            POINT point{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
+            ClientToScreen(window_, &point);
+            RECT bounds;
+            GetWindowRect(window_, &bounds);
+            MapWindowPoints(nullptr, taskbar_, reinterpret_cast<POINT*>(&bounds), 2);
+            pressed_ = true;
+            dragging_ = false;
+            pressX_ = point.x;
+            pressLeft_ = bounds.left;
+            SetCapture(window_);
+            return 0;
+        }
+        case WM_MOUSEMOVE: {
+            if (!pressed_ || !IsHorizontal()) return 0;
+            POINT point{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
+            ClientToScreen(window_, &point);
+            const int moved = point.x - pressX_;
+            if (!dragging_ && std::abs(moved) < GetSystemMetrics(SM_CXDRAG)) return 0;
+            dragging_ = true;
+            SetCursor(LoadCursorW(nullptr, IDC_SIZEWE));
+            RECT taskbar;
+            GetWindowRect(taskbar_, &taskbar);
+            const TaskbarRoom room = Room(taskbar, GetDpiForWindow(taskbar_));
+            const int left = TaskbarViewLeft(TaskbarSpot::Custom, pressLeft_ + moved, size_.cx, room);
+            SetWindowPos(window_, HWND_TOP, left, 0, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE);
+            return 0;
+        }
+        case WM_LBUTTONUP: {
+            const bool dragged = dragging_;
+            pressed_ = false;  // Before ReleaseCapture, which sends WM_CAPTURECHANGED
+            dragging_ = false;
+            ReleaseCapture();
+            if (!dragged) {
+                if (onOpenPanel) onOpenPanel();
+                return 0;
+            }
+            RECT taskbar, bounds;
+            GetWindowRect(taskbar_, &taskbar);
+            GetWindowRect(window_, &bounds);
+            const UINT dpi = GetDpiForWindow(taskbar_);
+            const int left = bounds.left - taskbar.left;
+            spot_ = SnapTaskbarDrop(left, size_.cx, Room(taskbar, dpi), Scale(dpi, 24));
+            offset_ = MulDiv(left, 96, static_cast<int>(dpi));
+            Place();
+            if (onPlaced) onPlaced(spot_, offset_);
+            return 0;
+        }
+        case WM_CAPTURECHANGED:
+            if (pressed_) {
+                // Lost the mouse mid-drag: back where it was.
+                pressed_ = dragging_ = false;
+                Place();
+            }
             return 0;
         case WM_RBUTTONUP: {
             POINT point{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};

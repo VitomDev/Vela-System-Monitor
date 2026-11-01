@@ -18,6 +18,7 @@ add_library(velacore STATIC
     src/core/processes.cpp
     src/core/sampler.cpp
     src/core/settings.cpp
+    src/core/taskbar_place.cpp
 )
 target_include_directories(velacore PUBLIC src)
 target_link_libraries(velacore PUBLIC user32 advapi32 iphlpapi)
