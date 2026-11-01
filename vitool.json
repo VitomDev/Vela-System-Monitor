@@ -5,5 +5,8 @@
   "icon": "assets/vela.png",
   "screenshots": [],
   "installer": "VelaSetup.exe",
-  "exe": "Vela.exe"
+  "exe": "Vela.exe",
+  "settings": [
+    "HKCU\\Software\\Vela System Monitor"
+  ]
 }
