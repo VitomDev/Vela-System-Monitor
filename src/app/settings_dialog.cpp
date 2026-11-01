@@ -7,6 +7,7 @@
 #include <commctrl.h>
 
 #include <algorithm>
+#include <iterator>
 #include <vector>
 
 namespace vela {
@@ -23,15 +24,29 @@ enum ControlId {
     kAutostartToggle,
     kCancel = IDCANCEL,
     kSave = IDOK,
+    // One chip per metric, in kChips order.
+    kPanelChipFirst = 200,
+    kMiniChipFirst = 220,
 };
+
+struct Chip {
+    uint32_t metric;
+    const wchar_t* label;
+};
+constexpr Chip kChips[] = {{metric::kCpu, L"CPU"},
+                           {metric::kMemory, L"Memory"},
+                           {metric::kDisk, L"Disk"},
+                           {metric::kNetwork, L"Network"},
+                           {metric::kBattery, L"Battery"}};
+constexpr int kChipCount = static_cast<int>(std::size(kChips));
 
 // Layout in 96-DPI pixels.
 constexpr int kWidth = 460;
 constexpr int kPadding = 24;
-constexpr int kRowHeight = 40;
+constexpr int kRowHeight = 36;
 constexpr int kFieldWidth = 200;
 constexpr int kFieldHeight = 32;
-constexpr int kSectionGap = 22;
+constexpr int kSectionGap = 18;
 constexpr int kRadius = 4;
 
 enum class TextStyle { Title, Caption, Label, Hint };
@@ -113,8 +128,28 @@ void Layout(State& state) {
     y += row;
     labelRow(y, L"Update", kIntervalButton, fieldWidth, fieldHeight);
     y += row;
-    text(padding, y, width - 2 * padding, scale(20), L"The panel updates every second while it is open.", TextStyle::Hint);
-    y += scale(20) + scale(kSectionGap);
+    y += scale(kSectionGap);
+
+    // A row of chips, each one a metric to show or hide.
+    const auto chipRow = [&](int y, int firstId) {
+        int x = padding;
+        for (int i = 0; i < kChipCount; ++i) {
+            const int chipWidth = TextWidth(window, state.textFont, kChips[i].label) + scale(28);
+            place(firstId + i, x, y, chipWidth, scale(30));
+            x += chipWidth + scale(8);
+        }
+    };
+
+    text(padding, y, width - 2 * padding, scale(24), L"What to show", TextStyle::Caption);
+    y += scale(24);
+    text(padding, y, width - 2 * padding, scale(28), L"In the panel", TextStyle::Label);
+    y += scale(28);
+    chipRow(y, kPanelChipFirst);
+    y += scale(30) + scale(10);
+    text(padding, y, width - 2 * padding, scale(28), L"On the taskbar and in the floating widget", TextStyle::Label);
+    y += scale(28);
+    chipRow(y, kMiniChipFirst);
+    y += scale(30) + scale(kSectionGap);
 
     text(padding, y, width - 2 * padding, scale(24), L"Always visible", TextStyle::Caption);
     y += scale(24);
@@ -122,9 +157,7 @@ void Layout(State& state) {
     y += row;
     labelRow(y, L"Show on the taskbar", kTaskbarToggle, scale(44), scale(20));
     y += row;
-    text(padding, y, width - 2 * padding, scale(20), L"CPU, memory and network speed. Drag the widget to move it.",
-         TextStyle::Hint);
-    y += scale(20) + scale(kSectionGap);
+    y += scale(kSectionGap);
 
     text(padding, y, width - 2 * padding, scale(24), L"General", TextStyle::Caption);
     y += scale(24);
@@ -136,7 +169,7 @@ void Layout(State& state) {
 
     const int buttonWidth = scale(96);
     text(padding, y, width - 2 * padding - 2 * buttonWidth - scale(16), fieldHeight,
-         L"Vela " VELA_VERSION_STRING L" · VitomDev", TextStyle::Hint);
+         L"Vela " VELA_VERSION_STRING L" \u00B7 VitomDev", TextStyle::Hint);
     place(kSave, width - padding - buttonWidth, y, buttonWidth, fieldHeight);
     place(kCancel, width - padding - 2 * buttonWidth - scale(8), y, buttonWidth, fieldHeight);
     y += fieldHeight + padding;
@@ -231,9 +264,55 @@ void DrawChoice(State& state, const DRAWITEMSTRUCT& item, const std::wstring& la
     }
 }
 
+// A pill that is accent-filled with a check while its metric is shown.
+void DrawChip(State& state, const DRAWITEMSTRUCT& item, const wchar_t* label, bool on) {
+    const Theme& theme = state.theme;
+    HDC dc = item.hDC;
+    const RECT& rect = item.rcItem;
+    const int radius = (rect.bottom - rect.top) / 2;
+    FillRect(dc, &rect, state.background);
+    if (on) {
+        COLORREF fill = theme.accent;
+        if (IsHot(item.hwndItem)) fill = RGB(GetRValue(fill) * 9 / 10, GetGValue(fill) * 9 / 10, GetBValue(fill) * 9 / 10);
+        FillRounded(dc, rect, fill, radius);
+    } else {
+        FillRounded(dc, rect, IsHot(item.hwndItem) ? theme.hover : theme.pressed, radius);
+        OutlineRounded(dc, rect, theme.divider, radius);
+    }
+    SetBkMode(dc, TRANSPARENT);
+    HGDIOBJ previous = SelectObject(dc, state.textFont);
+    SetTextColor(dc, on ? theme.accentText : theme.text);
+    RECT text = rect;
+    DrawTextW(dc, label, -1, &text, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+    SelectObject(dc, previous);
+    if ((item.itemState & ODS_FOCUS) && !(item.itemState & ODS_NOFOCUSRECT)) {
+        RECT focus = rect;
+        InflateRect(&focus, -3, -3);
+        DrawFocusRect(dc, &focus);
+    }
+}
+
+// The metric set a chip id belongs to, and its index; null when not a chip.
+uint32_t* ChipMetrics(State& state, int id, int& index) {
+    if (id >= kPanelChipFirst && id < kPanelChipFirst + kChipCount) {
+        index = id - kPanelChipFirst;
+        return &state.settings.panelMetrics;
+    }
+    if (id >= kMiniChipFirst && id < kMiniChipFirst + kChipCount) {
+        index = id - kMiniChipFirst;
+        return &state.settings.miniMetrics;
+    }
+    return nullptr;
+}
+
 void DrawControl(State& state, const DRAWITEMSTRUCT& item) {
     const ButtonFonts fonts{state.textFont, state.iconFont};
     const int radius = Scale(state.window, kRadius);
+    int chip = 0;
+    if (const uint32_t* metrics = ChipMetrics(state, static_cast<int>(item.CtlID), chip)) {
+        DrawChip(state, item, kChips[chip].label, (*metrics & kChips[chip].metric) != 0);
+        return;
+    }
     switch (static_cast<int>(item.CtlID)) {
         case kTrayIconButton: DrawChoice(state, item, TrayIconName(state.settings.trayIcon)); break;
         case kIntervalButton: DrawChoice(state, item, IntervalName(state.settings.intervalSeconds)); break;
@@ -303,7 +382,20 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
     if (!state) return DefWindowProcW(window, message, wParam, lParam);
 
     switch (message) {
-        case WM_COMMAND:
+        case WM_COMMAND: {
+            int chip = 0;
+            if (uint32_t* metrics = ChipMetrics(*state, LOWORD(wParam), chip)) {
+                const uint32_t toggled = *metrics ^ kChips[chip].metric;
+                if (toggled == 0) {
+                    state->status = L"Keep at least one thing to show.";
+                } else {
+                    *metrics = toggled;
+                    state->status.clear();
+                }
+                InvalidateRect(state->window, &state->statusRect, TRUE);
+                InvalidateRect(GetDlgItem(window, LOWORD(wParam)), nullptr, FALSE);
+                return 0;
+            }
             switch (LOWORD(wParam)) {
                 case kCancel: state->done = true; break;
                 case kSave: Save(*state); break;
@@ -322,6 +414,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
                 }
             }
             return 0;
+        }
         case WM_DRAWITEM:
             DrawControl(*state, *reinterpret_cast<const DRAWITEMSTRUCT*>(lParam));
             return TRUE;
@@ -383,7 +476,11 @@ void ShowSettingsDialog(HINSTANCE instance, HWND owner, const Settings& current,
     state.window = window;
     openWindow = window;
 
-    for (int id : {kTrayIconButton, kIntervalButton, kFloatingToggle, kTaskbarToggle, kAutostartToggle, kCancel, kSave}) {
+    std::vector<int> ids{kTrayIconButton, kIntervalButton};
+    for (int i = 0; i < kChipCount; ++i) ids.push_back(kPanelChipFirst + i);
+    for (int i = 0; i < kChipCount; ++i) ids.push_back(kMiniChipFirst + i);
+    ids.insert(ids.end(), {kFloatingToggle, kTaskbarToggle, kAutostartToggle, kCancel, kSave});
+    for (int id : ids) {
         HWND control = CreateWindowExW(0, L"BUTTON", L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW, 0, 0, 0, 0,
                                        window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)), instance, nullptr);
         EnableHover(control);

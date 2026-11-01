@@ -15,15 +15,30 @@ constexpr wchar_t kTaskbarClass[] = L"VelaTaskbar";
 
 int Scale(UINT dpi, int value) { return MulDiv(value, static_cast<int>(dpi), 96); }
 
+// Width of the wider line, and the height of one or both lines.
 SIZE MeasureLines(HFONT font, const MiniLines& lines) {
     HDC dc = GetDC(nullptr);
     HGDIOBJ previous = SelectObject(dc, font);
-    SIZE usage{}, network{};
-    GetTextExtentPoint32W(dc, lines.usage.c_str(), static_cast<int>(lines.usage.size()), &usage);
-    GetTextExtentPoint32W(dc, lines.network.c_str(), static_cast<int>(lines.network.size()), &network);
+    SIZE first{}, second{};
+    GetTextExtentPoint32W(dc, lines.first.c_str(), static_cast<int>(lines.first.size()), &first);
+    GetTextExtentPoint32W(dc, lines.second.c_str(), static_cast<int>(lines.second.size()), &second);
     SelectObject(dc, previous);
     ReleaseDC(nullptr, dc);
-    return {std::max(usage.cx, network.cx), usage.cy};
+    return {std::max(first.cx, second.cx), first.cy * (lines.second.empty() ? 1 : 2)};
+}
+
+// One line centered, or two lines meeting in the middle.
+void DrawLines(HDC dc, const MiniLines& lines, const RECT& rect, UINT align) {
+    const UINT flags = align | DT_SINGLELINE | DT_NOPREFIX;
+    RECT area = rect;
+    if (lines.second.empty()) {
+        DrawTextW(dc, lines.first.c_str(), -1, &area, flags | DT_VCENTER);
+        return;
+    }
+    RECT top{rect.left, rect.top, rect.right, (rect.top + rect.bottom) / 2};
+    RECT bottom{rect.left, top.bottom, rect.right, rect.bottom};
+    DrawTextW(dc, lines.first.c_str(), -1, &top, flags | DT_BOTTOM);
+    DrawTextW(dc, lines.second.c_str(), -1, &bottom, flags | DT_TOP);
 }
 
 ATOM RegisterClassOnce(HINSTANCE instance, const wchar_t* name, WNDPROC proc) {
@@ -56,19 +71,22 @@ void FloatingWidget::RefreshStyle() {
     if (font_) DeleteObject(font_);
     font_ = CreateUiFont(GetDpiForWindow(window_), 9, FW_SEMIBOLD);
     ApplyWindowStyle(window_, theme_);
-    const SIZE text = MeasureLines(font_, WidestMiniText());
-    RECT bounds;
-    GetWindowRect(window_, &bounds);
-    SetWindowPos(window_, nullptr, 0, 0, text.cx + 2 * Scale(12), 2 * text.cy + 2 * Scale(7),
+    const SIZE text = MeasureLines(font_, widest_);
+    SetWindowPos(window_, nullptr, 0, 0, text.cx + 2 * Scale(12), text.cy + 2 * Scale(7),
                  SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
     InvalidateRect(window_, nullptr, FALSE);
 }
 
-void FloatingWidget::Show(HINSTANCE instance, const std::optional<POINT>& position, const MiniLines& lines) {
-    if (window_) return;
+void FloatingWidget::Show(HINSTANCE instance, const std::optional<POINT>& position, const MiniLines& lines,
+                          const MiniLines& widest) {
+    if (window_) {
+        Update(lines, widest);
+        return;
+    }
     static const ATOM windowClass = RegisterClassOnce(instance, kFloatingClass, WindowProc);
     if (!windowClass) return;
     lines_ = lines;
+    widest_ = widest;
 
     // Back where it was left, or near the bottom-right corner of the main
     // screen, away from title bar buttons.
@@ -92,8 +110,16 @@ void FloatingWidget::Show(HINSTANCE instance, const std::optional<POINT>& positi
     SetWindowPos(window_, HWND_TOPMOST, origin.x, origin.y, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
 }
 
-void FloatingWidget::Update(const MiniLines& lines) {
-    if (!window_ || lines == lines_) return;
+void FloatingWidget::Update(const MiniLines& lines, const MiniLines& widest) {
+    if (!window_) return;
+    if (!(widest == widest_)) {
+        // Other metrics chosen: resize, keeping the top-left corner.
+        widest_ = widest;
+        lines_ = lines;
+        RefreshStyle();
+        return;
+    }
+    if (lines == lines_) return;
     lines_ = lines;
     InvalidateRect(window_, nullptr, FALSE);
 }
@@ -129,12 +155,8 @@ LRESULT FloatingWidget::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam
             SetBkMode(memory, TRANSPARENT);
             HGDIOBJ previousFont = SelectObject(memory, font_);
             const int padding = Scale(12);
-            RECT top{padding, 0, client.right - padding, client.bottom / 2};
-            RECT bottom{padding, client.bottom / 2, client.right - padding, client.bottom};
             SetTextColor(memory, theme_.text);
-            DrawTextW(memory, lines_.usage.c_str(), -1, &top, DT_LEFT | DT_BOTTOM | DT_SINGLELINE | DT_NOPREFIX);
-            SetTextColor(memory, theme_.secondaryText);
-            DrawTextW(memory, lines_.network.c_str(), -1, &bottom, DT_LEFT | DT_TOP | DT_SINGLELINE | DT_NOPREFIX);
+            DrawLines(memory, lines_, {padding, 0, client.right - padding, client.bottom}, DT_LEFT);
             BitBlt(dc, 0, 0, client.right, client.bottom, memory, 0, 0, SRCCOPY);
             SelectObject(memory, previousFont);
             SelectObject(memory, previousBitmap);
@@ -172,8 +194,13 @@ LRESULT FloatingWidget::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam
 
 // --- Taskbar view ------------------------------------------------------------------
 
-bool TaskbarView::Show(HINSTANCE instance, const MiniLines& lines) {
-    if (window_) return true;
+bool TaskbarView::Show(HINSTANCE instance, const MiniLines& lines, const MiniLines& widest) {
+    if (window_) {
+        Update(lines, widest);
+        return true;
+    }
+    widest_ = widest;
+    dpi_ = 0;
     static const ATOM windowClass = RegisterClassOnce(instance, kTaskbarClass, WindowProc);
     taskbar_ = FindWindowW(L"Shell_TrayWnd", nullptr);
     if (!windowClass || !taskbar_) return false;
@@ -203,12 +230,12 @@ void TaskbarView::Place() {
     if (dpi != dpi_) {
         // Measured once per DPI: this runs on every update.
         HFONT font = CreateUiFont(dpi, 9);
-        textSize_ = MeasureLines(font, WidestMiniText());
+        textSize_ = MeasureLines(font, widest_);
         DeleteObject(font);
         dpi_ = dpi;
     }
     const SIZE text = textSize_;
-    SIZE size{text.cx + Scale(dpi, 8), 2 * text.cy + Scale(dpi, 4)};
+    SIZE size{text.cx + Scale(dpi, 8), text.cy + Scale(dpi, 4)};
     POINT position;
     if (taskbar.right - taskbar.left >= taskbar.bottom - taskbar.top) {
         size.cy = std::max<LONG>(size.cy, taskbar.bottom - taskbar.top);
@@ -252,10 +279,7 @@ void TaskbarView::Render() {
     HGDIOBJ previousFont = SelectObject(dc, font);
     SetBkMode(dc, TRANSPARENT);
     SetTextColor(dc, RGB(255, 255, 255));
-    RECT top{0, 0, size_.cx, size_.cy / 2};
-    RECT bottom{0, size_.cy / 2, size_.cx, size_.cy};
-    DrawTextW(dc, lines_.usage.c_str(), -1, &top, DT_RIGHT | DT_BOTTOM | DT_SINGLELINE | DT_NOPREFIX);
-    DrawTextW(dc, lines_.network.c_str(), -1, &bottom, DT_RIGHT | DT_TOP | DT_SINGLELINE | DT_NOPREFIX);
+    DrawLines(dc, lines_, {0, 0, size_.cx, size_.cy}, DT_RIGHT);
     GdiFlush();
 
     const int color = IsTaskbarLight() ? 0 : 255;
@@ -279,11 +303,15 @@ void TaskbarView::Render() {
     ReleaseDC(nullptr, screen);
 }
 
-void TaskbarView::Update(const MiniLines& lines) {
+void TaskbarView::Update(const MiniLines& lines, const MiniLines& widest) {
     if (!window_) return;
     if (!IsWindow(taskbar_)) {
         Close();  // Explorer restarted; the app shows it again on TaskbarCreated.
         return;
+    }
+    if (!(widest == widest_)) {
+        widest_ = widest;
+        dpi_ = 0;  // Measure again.
     }
     const SIZE previous = size_;
     Place();

@@ -19,8 +19,9 @@ public:
     std::function<void()> onOpenPanel;
 
     bool IsOpen() const { return window_ != nullptr; }
-    void Show(HINSTANCE instance, const std::optional<POINT>& position, const MiniLines& lines);
-    void Update(const MiniLines& lines);
+    // `widest` sizes the widget for the chosen metrics.
+    void Show(HINSTANCE instance, const std::optional<POINT>& position, const MiniLines& lines, const MiniLines& widest);
+    void Update(const MiniLines& lines, const MiniLines& widest);
     void Close();
 
 private:
@@ -31,6 +32,7 @@ private:
 
     HWND window_ = nullptr;
     MiniLines lines_;
+    MiniLines widest_;
     Theme theme_{};
     HFONT font_ = nullptr;
 };
@@ -45,8 +47,8 @@ public:
 
     bool IsOpen() const { return window_ != nullptr; }
     // False when the taskbar could not be found.
-    bool Show(HINSTANCE instance, const MiniLines& lines);
-    void Update(const MiniLines& lines);
+    bool Show(HINSTANCE instance, const MiniLines& lines, const MiniLines& widest);
+    void Update(const MiniLines& lines, const MiniLines& widest);
     // After a theme change, which child windows are not told about.
     void Redraw() {
         if (window_) Render();
@@ -63,6 +65,7 @@ private:
     HWND window_ = nullptr;
     HWND taskbar_ = nullptr;
     MiniLines lines_;
+    MiniLines widest_;
     SIZE size_{};
     UINT dpi_ = 0;
     SIZE textSize_{};

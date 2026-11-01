@@ -39,6 +39,7 @@ private:
     void RestartTimer();
     // Opens or closes the floating widget and the taskbar view as set.
     void ApplyMiniViews();
+    uint32_t MiniMetrics() const;
 
     bool ApplySettings(const Settings& settings, bool autostart, std::wstring& error);
     void OpenSettings();

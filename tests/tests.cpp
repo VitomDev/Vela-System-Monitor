@@ -154,18 +154,44 @@ TEST(TooltipSummarizesAndFitsTheLimit) {
     CHECK(TooltipText(s).size() <= 127);
 }
 
+TEST(MiniTextShowsTheChosenMetrics) {
+    const uint32_t standard = metric::kCpu | metric::kMemory | metric::kNetwork;
+    MiniLines lines = MiniText(SampleSnapshot(), standard);
+    CHECK(lines.first == L"CPU 23%  RAM 38%");
+    CHECK(lines.second == L"\u2193 1.5 KB/s  \u2191 0 B/s");
+
+    // One metric: a single line.
+    lines = MiniText(SampleSnapshot(), metric::kMemory);
+    CHECK(lines.first == L"RAM 38%" && lines.second.empty());
+
+    // Odd counts put the extra one on the first line; no battery, no item.
+    Snapshot s = SampleSnapshot();
+    s.diskRatesKnown = true;
+    s.diskRead = 1024;
+    s.diskWrite = 1024;
+    lines = MiniText(s, metric::kAll);
+    CHECK(lines.first == L"CPU 23%  RAM 38%");
+    CHECK(lines.second == L"Disk 2.0 KB/s  \u2193 1.5 KB/s  \u2191 0 B/s");
+    s.battery = {true, 80, false, false, -1};
+    lines = MiniText(s, metric::kAll);
+    CHECK(lines.first == L"CPU 23%  RAM 38%  Disk 2.0 KB/s");
+    CHECK(lines.second == L"\u2193 1.5 KB/s  \u2191 0 B/s  Battery 80%");
+}
+
 TEST(MiniTextFitsTheWidestLines) {
-    const MiniLines lines = MiniText(SampleSnapshot());
-    CHECK(lines.usage == L"CPU 23%  RAM 38%");
-    CHECK(lines.network == L"↓ 1.5 KB/s  ↑ 0 B/s");
     // The views are sized for the widest text, so they never resize while running.
     Snapshot busy = SampleSnapshot();
     busy.cpuPercent = 100;
     busy.memoryUsed = busy.memoryTotal;
+    busy.diskRatesKnown = true;
+    busy.diskRead = 999 * 1024;
     busy.networkDown = busy.networkUp = 999 * 1024;
-    const MiniLines widest = WidestMiniText();
-    CHECK(MiniText(busy).usage.size() <= widest.usage.size());
-    CHECK(MiniText(busy).network.size() <= widest.network.size());
+    busy.battery = {true, 100, false, false, -1};
+    for (uint32_t metrics = 1; metrics <= metric::kAll; ++metrics) {
+        const MiniLines widest = WidestMiniText(metrics);
+        CHECK(MiniText(busy, metrics).first.size() <= widest.first.size());
+        CHECK(MiniText(busy, metrics).second.size() <= widest.second.size());
+    }
 }
 
 TEST(SamplerReadsPlausibleValues) {
@@ -257,6 +283,15 @@ TEST(PanelRowsDescribeTheSnapshot) {
     CHECK(rows[0].high);
     CHECK(rows[2].detail == L"300 GB of 400 GB \u00B7 R 0 B/s \u00B7 W 2.0 KB/s");
     CHECK(rows[4].label == L"Battery" && rows[4].detail == L"On battery" && rows[4].high);
+    CHECK(rows[0].opens == PanelView::Cpu && rows[2].opens == PanelView::Disk && rows[3].opens == PanelView::Overview);
+
+    // Only the chosen metrics, in their usual order.
+    rows = BuildPanelRows(s, 8, 0, metric::kNetwork | metric::kMemory);
+    CHECK(rows.size() == 2 && rows[0].label == L"Memory" && rows[1].label == L"Network");
+    // Only a battery on a PC without one: CPU rather than an empty panel.
+    s.battery = {};
+    rows = BuildPanelRows(s, 8, 0, metric::kBattery);
+    CHECK(rows.size() == 1 && rows[0].label == L"CPU");
 }
 
 TEST(TrayIconOnlyChangesWhenVisible) {
@@ -299,6 +334,10 @@ TEST(SettingsPersist) {
 
     settings.trayIcon = TrayIcon::MemoryPercent;
     CHECK(!settings.floating && !settings.taskbar && !settings.floatingPosition);
+    CHECK(settings.panelMetrics == metric::kAll);
+    CHECK(settings.miniMetrics == (metric::kCpu | metric::kMemory | metric::kNetwork));
+    settings.panelMetrics = metric::kCpu | metric::kBattery;
+    settings.miniMetrics = metric::kDisk;
     settings.intervalSeconds = 5;
     settings.floating = settings.taskbar = true;
     // A monitor left of the main one has negative coordinates.
@@ -307,6 +346,7 @@ TEST(SettingsPersist) {
     const Settings loaded = Settings::Load(kTestSettingsKey);
     CHECK(loaded.trayIcon == TrayIcon::MemoryPercent && loaded.intervalSeconds == 5);
     CHECK(loaded.floating && loaded.taskbar);
+    CHECK(loaded.panelMetrics == (metric::kCpu | metric::kBattery) && loaded.miniMetrics == metric::kDisk);
     CHECK(loaded.floatingPosition && loaded.floatingPosition->x == -1500 && loaded.floatingPosition->y == 40);
     RegDeleteTreeW(HKEY_CURRENT_USER, kTestSettingsKey);
 }

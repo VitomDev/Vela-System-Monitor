@@ -38,6 +38,8 @@ Settings Settings::Load(const wchar_t* keyPath) {
             if (value == interval) settings.intervalSeconds = value;
         }
     }
+    if (ReadDword(key, L"PanelMetrics", value) && (value & metric::kAll)) settings.panelMetrics = value & metric::kAll;
+    if (ReadDword(key, L"MiniMetrics", value) && (value & metric::kAll)) settings.miniMetrics = value & metric::kAll;
     if (ReadDword(key, L"Floating", value)) settings.floating = value != 0;
     if (ReadDword(key, L"Taskbar", value)) settings.taskbar = value != 0;
     DWORD x = 0, y = 0;
@@ -54,6 +56,7 @@ bool Settings::Save(const wchar_t* keyPath) const {
         return false;
     }
     bool saved = WriteDword(key, L"TrayIcon", static_cast<DWORD>(trayIcon)) && WriteDword(key, L"Interval", intervalSeconds) &&
+                 WriteDword(key, L"PanelMetrics", panelMetrics) && WriteDword(key, L"MiniMetrics", miniMetrics) &&
                  WriteDword(key, L"Floating", floating ? 1 : 0) && WriteDword(key, L"Taskbar", taskbar ? 1 : 0);
     if (saved && floatingPosition) {
         // Stored as DWORDs; negative coordinates (monitors left of the main one) round-trip.

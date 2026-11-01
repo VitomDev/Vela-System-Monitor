@@ -1,5 +1,7 @@
 #pragma once
 
+#include "core/metrics.h"
+
 #include <windows.h>
 
 #include <array>
@@ -26,6 +28,9 @@ inline constexpr std::array<DWORD, 3> kIntervals{1, 2, 5};
 struct Settings {
     TrayIcon trayIcon = TrayIcon::Logo;
     DWORD intervalSeconds = 2;
+    // What the panel and the mini views show (metric:: bits, never none).
+    uint32_t panelMetrics = metric::kAll;
+    uint32_t miniMetrics = metric::kCpu | metric::kMemory | metric::kNetwork;
     // The always-on-top mini widget and the view on the taskbar.
     bool floating = false;
     bool taskbar = false;

@@ -60,15 +60,28 @@ std::wstring FormatPercent(double percent);
 // The tray tooltip, which Windows limits to 127 characters.
 std::wstring TooltipText(const Snapshot& snapshot);
 
-// The two short lines of the floating widget and the taskbar view.
+// The metrics a view shows, as a set of bits; the user picks them in Settings.
+namespace metric {
+inline constexpr uint32_t kCpu = 1;
+inline constexpr uint32_t kMemory = 2;
+inline constexpr uint32_t kDisk = 4;
+inline constexpr uint32_t kNetwork = 8;
+inline constexpr uint32_t kBattery = 16;
+inline constexpr uint32_t kAll = kCpu | kMemory | kDisk | kNetwork | kBattery;
+}  // namespace metric
+
+// The two short lines of the floating widget and the taskbar view, e.g.
+// "CPU 23%  RAM 45%" over "\u2193 1.2 MB/s  \u2191 30 KB/s". With a single metric the
+// second line is empty.
 struct MiniLines {
-    std::wstring usage;    // "CPU 23%  RAM 45%"
-    std::wstring network;  // "↓ 1.2 MB/s  ↑ 30 KB/s"
+    std::wstring first;
+    std::wstring second;
 
     bool operator==(const MiniLines&) const = default;
 };
-MiniLines MiniText(const Snapshot& snapshot);
-// The widest lines MiniText can produce, so the views never change width.
-MiniLines WidestMiniText();
+MiniLines MiniText(const Snapshot& snapshot, uint32_t metrics);
+// The widest lines MiniText can produce for these metrics, so the views
+// never change width while running.
+MiniLines WidestMiniText(uint32_t metrics);
 
 }  // namespace vela

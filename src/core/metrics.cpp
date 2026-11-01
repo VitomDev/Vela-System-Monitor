@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cwchar>
 #include <iterator>
+#include <vector>
 
 namespace vela {
 
@@ -82,9 +83,9 @@ std::wstring FormatDuration(long long seconds) {
 std::wstring FormatPercent(double percent) { return std::to_wstring(std::lround(percent)) + L"%"; }
 
 std::wstring TooltipText(const Snapshot& s) {
-    std::wstring text = L"CPU " + FormatPercent(s.cpuPercent) + L" · RAM " + std::to_wstring(s.MemoryPercent()) + L"%";
+    std::wstring text = L"CPU " + FormatPercent(s.cpuPercent) + L" \u00B7 RAM " + std::to_wstring(s.MemoryPercent()) + L"%";
     text += L"\nDisk " + std::wstring(1, s.diskLetter) + L": " + std::to_wstring(s.DiskPercent()) + L"%";
-    text += L"\n↓ " + FormatRate(s.networkDown) + L"  ↑ " + FormatRate(s.networkUp);
+    text += L"\n\u2193 " + FormatRate(s.networkDown) + L"  \u2191 " + FormatRate(s.networkUp);
     if (s.battery.present) {
         text += L"\nBattery " + std::to_wstring(s.battery.percent) + L"%";
         if (s.battery.charging) {
@@ -99,11 +100,37 @@ std::wstring TooltipText(const Snapshot& s) {
     return text;
 }
 
-MiniLines MiniText(const Snapshot& s) {
-    return {L"CPU " + FormatPercent(s.cpuPercent) + L"  RAM " + std::to_wstring(s.MemoryPercent()) + L"%",
-            L"↓ " + FormatRate(s.networkDown) + L"  ↑ " + FormatRate(s.networkUp)};
+MiniLines MiniText(const Snapshot& s, uint32_t metrics) {
+    std::vector<std::wstring> items;
+    if (metrics & metric::kCpu) items.push_back(L"CPU " + FormatPercent(s.cpuPercent));
+    if (metrics & metric::kMemory) items.push_back(L"RAM " + std::to_wstring(s.MemoryPercent()) + L"%");
+    if (metrics & metric::kDisk) {
+        items.push_back(s.diskRatesKnown ? L"Disk " + FormatRate(s.diskRead + s.diskWrite)
+                                         : L"Disk " + std::to_wstring(s.DiskPercent()) + L"%");
+    }
+    if (metrics & metric::kNetwork) items.push_back(L"\u2193 " + FormatRate(s.networkDown) + L"  \u2191 " + FormatRate(s.networkUp));
+    if ((metrics & metric::kBattery) && s.battery.present) items.push_back(L"Battery " + std::to_wstring(s.battery.percent) + L"%");
+
+    // The first line takes the larger half.
+    MiniLines lines;
+    const size_t split = (items.size() + 1) / 2;
+    for (size_t i = 0; i < items.size(); ++i) {
+        std::wstring& line = i < split ? lines.first : lines.second;
+        if (!line.empty()) line += L"  ";
+        line += items[i];
+    }
+    return lines;
 }
 
-MiniLines WidestMiniText() { return {L"CPU 100%  RAM 100%", L"↓ 888 MB/s  ↑ 888 MB/s"}; }
+MiniLines WidestMiniText(uint32_t metrics) {
+    Snapshot widest;
+    widest.cpuPercent = 100;
+    widest.memoryUsed = widest.memoryTotal = 1;
+    widest.diskRatesKnown = true;
+    widest.diskRead = 888ull << 20;
+    widest.networkDown = widest.networkUp = 888ull << 20;
+    widest.battery = {true, 100, false, false, -1};
+    return MiniText(widest, metrics);
+}
 
 }  // namespace vela

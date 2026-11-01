@@ -27,16 +27,14 @@ constexpr COLORREF kWarning = RGB(232, 72, 85);
 // Hot spots besides the overview rows, which use their index.
 constexpr int kHotSettings = 100;
 constexpr int kHotBack = 101;
-// CPU, memory and disk: the rows that open a top list.
-constexpr size_t kDetailRows = 3;
 
 std::wstring Percent(int value) { return std::to_wstring(value) + L"%"; }
 
 const wchar_t* ViewTitle(PanelView view) {
     switch (view) {
-        case PanelView::Cpu: return L"CPU · top processes";
-        case PanelView::Memory: return L"Memory · top processes";
-        case PanelView::Disk: return L"Disk activity · top processes";
+        case PanelView::Cpu: return L"CPU \u00B7 top processes";
+        case PanelView::Memory: return L"Memory \u00B7 top processes";
+        case PanelView::Disk: return L"Disk activity \u00B7 top processes";
         case PanelView::Overview: break;
     }
     return L"System";
@@ -44,27 +42,36 @@ const wchar_t* ViewTitle(PanelView view) {
 
 }  // namespace
 
-std::vector<PanelRow> BuildPanelRows(const Snapshot& s, unsigned processors, unsigned long long uptimeMs) {
+std::vector<PanelRow> BuildPanelRows(const Snapshot& s, unsigned processors, unsigned long long uptimeMs,
+                                     uint32_t metrics) {
     std::vector<PanelRow> rows;
-    const int cpu = static_cast<int>(s.cpuPercent + 0.5);
-    rows.push_back({icons::kCpu, L"CPU", Percent(cpu),
-                    std::to_wstring(processors) + L" logical processors · up " +
-                        FormatDuration(static_cast<long long>(uptimeMs / 1000)),
-                    cpu, cpu >= kHighPercent});
+    // Nothing left to show (only a battery this PC does not have): CPU at least.
+    if (!(metrics & ~metric::kBattery) && !s.battery.present) metrics = metric::kCpu;
 
-    rows.push_back({icons::kMemory, L"Memory", Percent(s.MemoryPercent()),
-                    FormatBytes(s.memoryUsed) + L" of " + FormatBytes(s.memoryTotal), s.MemoryPercent(),
-                    s.MemoryPercent() >= kHighPercent});
+    if (metrics & metric::kCpu) {
+        const int cpu = static_cast<int>(s.cpuPercent + 0.5);
+        rows.push_back({icons::kCpu, L"CPU", Percent(cpu),
+                        std::to_wstring(processors) + L" logical processors \u00B7 up " +
+                            FormatDuration(static_cast<long long>(uptimeMs / 1000)),
+                        cpu, cpu >= kHighPercent, PanelView::Cpu});
+    }
+    if (metrics & metric::kMemory) {
+        rows.push_back({icons::kMemory, L"Memory", Percent(s.MemoryPercent()),
+                        FormatBytes(s.memoryUsed) + L" of " + FormatBytes(s.memoryTotal), s.MemoryPercent(),
+                        s.MemoryPercent() >= kHighPercent, PanelView::Memory});
+    }
+    if (metrics & metric::kDisk) {
+        std::wstring disk = FormatBytes(s.diskUsed) + L" of " + FormatBytes(s.diskTotal);
+        if (s.diskRatesKnown) disk += L" \u00B7 R " + FormatRate(s.diskRead) + L" \u00B7 W " + FormatRate(s.diskWrite);
+        rows.push_back({icons::kDisk, L"Disk (" + std::wstring(1, s.diskLetter) + L":)", Percent(s.DiskPercent()), disk,
+                        s.DiskPercent(), s.DiskPercent() >= kHighPercent, PanelView::Disk});
+    }
+    if (metrics & metric::kNetwork) {
+        rows.push_back({icons::kNetwork, L"Network", L"",
+                        L"\u2193 " + FormatRate(s.networkDown) + L"   \u2191 " + FormatRate(s.networkUp), -1, false});
+    }
 
-    std::wstring disk = FormatBytes(s.diskUsed) + L" of " + FormatBytes(s.diskTotal);
-    if (s.diskRatesKnown) disk += L" · R " + FormatRate(s.diskRead) + L" · W " + FormatRate(s.diskWrite);
-    rows.push_back({icons::kDisk, L"Disk (" + std::wstring(1, s.diskLetter) + L":)", Percent(s.DiskPercent()), disk,
-                    s.DiskPercent(), s.DiskPercent() >= kHighPercent});
-
-    rows.push_back({icons::kNetwork, L"Network", L"",
-                    L"↓ " + FormatRate(s.networkDown) + L"   ↑ " + FormatRate(s.networkUp), -1, false});
-
-    if (s.battery.present) {
+    if ((metrics & metric::kBattery) && s.battery.present) {
         std::wstring state;
         if (s.battery.charging) {
             state = L"Charging";
@@ -151,9 +158,9 @@ int Panel::HitTest(POINT point) const {
         const RECT back = BackRect();
         return PtInRect(&back, point) ? kHotBack : -1;
     }
-    for (size_t i = 0; i < std::min(kDetailRows, rows_.size()); ++i) {
+    for (size_t i = 0; i < rows_.size(); ++i) {
         const RECT row = RowRect(i);
-        if (PtInRect(&row, point)) return static_cast<int>(i);
+        if (rows_[i].opens != PanelView::Overview && PtInRect(&row, point)) return static_cast<int>(i);
     }
     return -1;
 }
@@ -189,7 +196,7 @@ void Panel::RefreshStyle() {
     ApplyWindowStyle(window_, theme_);
 }
 
-void Panel::Show(HINSTANCE instance, const RECT& anchor, const Snapshot& snapshot) {
+void Panel::Show(HINSTANCE instance, const RECT& anchor, const Snapshot& snapshot, uint32_t metrics) {
     if (window_) {
         SetForegroundWindow(window_);
         return;
@@ -215,7 +222,8 @@ void Panel::Show(HINSTANCE instance, const RECT& anchor, const Snapshot& snapsho
     view_ = PanelView::Overview;
     processors_ = GetActiveProcessorCount(ALL_PROCESSOR_GROUPS);
     memoryTotal_ = snapshot.memoryTotal;
-    rows_ = BuildPanelRows(snapshot, processors_, GetTickCount64());
+    metrics_ = metrics;
+    rows_ = BuildPanelRows(snapshot, processors_, GetTickCount64(), metrics_);
     RefreshStyle();
 
     // Next to the tray icon, inside the work area, like the system flyouts.
@@ -249,7 +257,7 @@ void Panel::Update(const Snapshot& snapshot, const std::vector<ProcessUsage>& pr
     if (!window_) return;
     memoryTotal_ = snapshot.memoryTotal;
     processes_ = processes;
-    std::vector<PanelRow> rows = BuildPanelRows(snapshot, processors_, GetTickCount64());
+    std::vector<PanelRow> rows = BuildPanelRows(snapshot, processors_, GetTickCount64(), metrics_);
 
     if (view_ != PanelView::Overview) {
         rows_ = std::move(rows);
@@ -408,7 +416,7 @@ void Panel::Paint(HDC dc, const RECT& client) {
     if (view_ == PanelView::Overview) {
         for (size_t i = 0; i < rows_.size(); ++i) {
             const RECT rect = RowRect(i);
-            if (IntersectRect(&overlap, &rect, &client)) PaintRow(dc, rows_[i], rect, static_cast<int>(i) == hot_, i < kDetailRows);
+            if (IntersectRect(&overlap, &rect, &client)) PaintRow(dc, rows_[i], rect, static_cast<int>(i) == hot_, rows_[i].opens != PanelView::Overview);
         }
     } else {
         for (size_t i = 0; i < lines_.size(); ++i) {
@@ -420,7 +428,7 @@ void Panel::Paint(HDC dc, const RECT& client) {
         if (lines_.empty()) {
             RECT measuring = LineRect(0);
             measuring.left += padding;
-            DrawTextW(dc, L"Measuring…", -1, &measuring, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+            DrawTextW(dc, L"Measuring\u2026", -1, &measuring, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
         }
         const RECT last = LineRect(kTopProcesses - 1);
         RECT footer{padding, last.bottom, Scale(kWidth) - padding, last.bottom + Scale(kFooterHeight)};
@@ -486,7 +494,7 @@ LRESULT Panel::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
             } else if (hit == kHotBack) {
                 SetView(PanelView::Overview);
             } else if (hit >= 0) {
-                SetView(static_cast<PanelView>(hit + 1));
+                SetView(rows_[hit].opens);
             }
             return 0;
         }

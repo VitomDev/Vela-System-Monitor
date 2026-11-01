@@ -12,6 +12,9 @@
 
 namespace vela {
 
+// The overview, or the processes using the most of one resource.
+enum class PanelView { Overview, Cpu, Memory, Disk };
+
 // One line of the panel: a metric with its value, details and level bar.
 struct PanelRow {
     const wchar_t* icon = nullptr;
@@ -20,14 +23,14 @@ struct PanelRow {
     std::wstring detail;
     int barPercent = -1;  // -1: no bar
     bool high = false;
+    PanelView opens = PanelView::Overview;  // The top list a click opens, if any
 
     bool operator==(const PanelRow&) const = default;
 };
 
-std::vector<PanelRow> BuildPanelRows(const Snapshot& snapshot, unsigned processors, unsigned long long uptimeMs);
-
-// The overview, or the processes using the most of one resource.
-enum class PanelView { Overview, Cpu, Memory, Disk };
+// Only the `metrics` chosen in Settings; CPU when none of them can be shown.
+std::vector<PanelRow> BuildPanelRows(const Snapshot& snapshot, unsigned processors, unsigned long long uptimeMs,
+                                     uint32_t metrics = metric::kAll);
 
 // One process in a top list. The bar is relative to the whole system for
 // CPU and memory, and to the busiest process for disk activity.
@@ -57,7 +60,7 @@ public:
     // that closed it does not open it again.
     bool JustClosed() const { return GetTickCount64() - closedAt_ < 300; }
 
-    void Show(HINSTANCE instance, const RECT& anchor, const Snapshot& snapshot);
+    void Show(HINSTANCE instance, const RECT& anchor, const Snapshot& snapshot, uint32_t metrics);
     void Update(const Snapshot& snapshot, const std::vector<ProcessUsage>& processes);
     void Close();
 
@@ -91,6 +94,7 @@ private:
     std::vector<ProcessLine> lines_;
     uint64_t memoryTotal_ = 0;
     unsigned processors_ = 0;
+    uint32_t metrics_ = metric::kAll;
     int hot_ = -1;
     bool activated_ = false;
 

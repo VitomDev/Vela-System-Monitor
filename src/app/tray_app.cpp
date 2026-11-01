@@ -184,7 +184,7 @@ void TrayApp::ShowPanel() {
         anchor = {cursor.x, cursor.y, cursor.x + 1, cursor.y + 1};
     }
     snapshot_ = sampler_.Sample();
-    panel_.Show(instance_, anchor, snapshot_);
+    panel_.Show(instance_, anchor, snapshot_, settings_.panelMetrics);
     // The first reading, so the top lists are ready a second later.
     if (panel_.IsOpen()) processSampler_.Sample();
     RestartTimer();
@@ -216,22 +216,32 @@ void TrayApp::Sample() {
     // Processes are only read while the panel is open.
     if (panel_.IsOpen()) panel_.Update(snapshot_, processSampler_.Sample());
     if (floating_.IsOpen() || taskbarView_.IsOpen()) {
-        const MiniLines lines = MiniText(snapshot_);
-        floating_.Update(lines);
-        taskbarView_.Update(lines);
+        const MiniLines lines = MiniText(snapshot_, MiniMetrics());
+        const MiniLines widest = WidestMiniText(MiniMetrics());
+        floating_.Update(lines, widest);
+        taskbarView_.Update(lines, widest);
     }
+}
+
+uint32_t TrayApp::MiniMetrics() const {
+    // No room is kept for a battery this PC does not have.
+    uint32_t metrics = settings_.miniMetrics;
+    if (!snapshot_.battery.present) metrics &= ~metric::kBattery;
+    return metrics ? metrics : metric::kCpu;
 }
 
 void TrayApp::ApplyMiniViews() {
     if (exiting_) return;
+    const MiniLines lines = MiniText(snapshot_, MiniMetrics());
+    const MiniLines widest = WidestMiniText(MiniMetrics());
     if (settings_.floating) {
-        floating_.Show(instance_, settings_.floatingPosition, MiniText(snapshot_));
+        floating_.Show(instance_, settings_.floatingPosition, lines, widest);
     } else {
         floating_.Close();
     }
     if (!settings_.taskbar) {
         taskbarView_.Close();
-    } else if (!taskbarView_.Show(instance_, MiniText(snapshot_))) {
+    } else if (!taskbarView_.Show(instance_, lines, widest)) {
         Notify(L"Vela could not find the taskbar to show its numbers there.");
     }
 }
