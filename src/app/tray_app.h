@@ -55,6 +55,7 @@ private:
     bool exiting_ = false;
 
     Sampler sampler_;
+    ProcessSampler processSampler_;
     Snapshot snapshot_;
     TrayIconState iconState_;
     HICON currentIcon_ = nullptr;

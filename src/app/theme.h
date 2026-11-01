@@ -56,6 +56,8 @@ int ButtonWidth(HWND window, const ButtonFonts& fonts, const wchar_t* icon, cons
 namespace icons {
 inline constexpr wchar_t kChevronDown[] = L"\uE70D";
 inline constexpr wchar_t kSettings[] = L"\uE713";
+inline constexpr wchar_t kBack[] = L"\uE72B";
+inline constexpr wchar_t kChevronRight[] = L"\uE76C";
 inline constexpr wchar_t kCpu[] = L"\uE950";
 inline constexpr wchar_t kMemory[] = L"\uE964";
 inline constexpr wchar_t kDisk[] = L"\uEDA2";

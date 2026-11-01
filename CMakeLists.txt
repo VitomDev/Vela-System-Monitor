@@ -15,6 +15,7 @@ add_link_options(/guard:cf /CETCOMPAT /OPT:REF /OPT:ICF)
 add_library(velacore STATIC
     src/core/metrics.cpp
     src/core/paths.cpp
+    src/core/processes.cpp
     src/core/sampler.cpp
     src/core/settings.cpp
 )

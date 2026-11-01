@@ -183,6 +183,59 @@ TEST(SamplerReadsPlausibleValues) {
     CHECK(second.diskLetter == windows[0]);
 }
 
+// --- Processes ----------------------------------------------------------------------------------
+
+TEST(ProcessUsageIsGroupedByNameWithRates) {
+    ProcessUsageCalculator calculator;
+    // 4 processors over 1 s: 40,000,000 units of 100 ns are the whole CPU.
+    std::vector<ProcessCounters> first{{10, 1, L"chrome.exe", 0, 100, 0}, {11, 1, L"Chrome.exe", 0, 50, 1000},
+                                       {20, 1, L"code.exe", 0, 300, 0}};
+    std::vector<ProcessUsage> usage = calculator.Update(first, 0, 4);
+    CHECK(usage.size() == 2);
+    CHECK(usage[0].name == L"chrome.exe" && usage[0].count == 2 && usage[0].memory == 150 && usage[0].cpuPercent == 0);
+
+    // Process 20 ended and its id was reused by another program: no rate for it.
+    std::vector<ProcessCounters> second{{10, 1, L"chrome.exe", 4'000'000, 100, 0}, {11, 1, L"Chrome.exe", 6'000'000, 50, 3000},
+                                        {20, 2, L"code.exe", 8'000'000, 300, 0}};
+    usage = calculator.Update(second, 1000, 4);
+    CHECK(usage[0].cpuPercent == 25.0);
+    CHECK(usage[0].ioRate == 2000);
+    CHECK(usage[1].cpuPercent == 0);
+}
+
+TEST(TopProcessesAreTheLargest) {
+    std::vector<ProcessUsage> processes{{L"a", 1, 5, 300, 0}, {L"b", 1, 50, 100, 9}, {L"c", 1, 20, 200, 4}};
+    std::vector<ProcessUsage> top = TopProcesses(processes, ProcessMetric::Cpu, 2);
+    CHECK(top.size() == 2 && top[0].name == L"b" && top[1].name == L"c");
+    CHECK(TopProcesses(processes, ProcessMetric::Memory, 10)[0].name == L"a");
+    CHECK(TopProcesses(processes, ProcessMetric::Io, 10)[2].name == L"a");
+}
+
+TEST(ProcessLinesShowValuesAndBars) {
+    std::vector<ProcessUsage> processes{{L"chrome.exe", 12, 4.26, 4ull << 30, 2048}, {L"code.exe", 1, 23.4, 1ull << 30, 1024}};
+    std::vector<ProcessLine> lines = BuildProcessLines(processes, PanelView::Cpu, 16ull << 30);
+    CHECK(lines.size() == 2);
+    CHECK(lines[0].name == L"code.exe" && lines[0].value == L"23%" && lines[0].barPercent == 23);
+    CHECK(lines[1].name == L"chrome.exe (12)" && lines[1].value == L"4.3%");
+    lines = BuildProcessLines(processes, PanelView::Memory, 16ull << 30);
+    CHECK(lines[0].value == L"4.0 GB" && lines[0].barPercent == 25);
+    lines = BuildProcessLines(processes, PanelView::Disk, 16ull << 30);
+    CHECK(lines[0].value == L"2.0 KB/s" && lines[0].barPercent == 100 && lines[1].barPercent == 50);
+}
+
+TEST(ProcessSamplerSeesThisProcess) {
+    ProcessSampler sampler;
+    sampler.Sample();
+    Sleep(200);
+    const std::vector<ProcessUsage> usage = sampler.Sample();
+    CHECK(usage.size() > 5);
+    bool found = false;
+    for (const ProcessUsage& process : usage) {
+        if (process.name == L"VelaTests.exe") found = process.memory > 0;
+    }
+    CHECK(found);
+}
+
 // --- Panel and tray icon ------------------------------------------------------------------------
 
 TEST(PanelRowsDescribeTheSnapshot) {

@@ -3,6 +3,7 @@
 #include <windowsx.h>
 
 #include <algorithm>
+#include <cmath>
 
 namespace vela {
 
@@ -15,13 +16,31 @@ constexpr int kWidth = 340;
 constexpr int kPadding = 16;
 constexpr int kHeaderHeight = 40;
 constexpr int kRowHeight = 60;
+constexpr int kLineHeight = 30;
+constexpr int kFooterHeight = 28;
 constexpr int kBarHeight = 4;
 constexpr int kMargin = 12;  // From the taskbar and screen edges
 
 constexpr int kHighPercent = 90;
 constexpr COLORREF kWarning = RGB(232, 72, 85);
 
+// Hot spots besides the overview rows, which use their index.
+constexpr int kHotSettings = 100;
+constexpr int kHotBack = 101;
+// CPU, memory and disk: the rows that open a top list.
+constexpr size_t kDetailRows = 3;
+
 std::wstring Percent(int value) { return std::to_wstring(value) + L"%"; }
+
+const wchar_t* ViewTitle(PanelView view) {
+    switch (view) {
+        case PanelView::Cpu: return L"CPU · top processes";
+        case PanelView::Memory: return L"Memory · top processes";
+        case PanelView::Disk: return L"Disk activity · top processes";
+        case PanelView::Overview: break;
+    }
+    return L"System";
+}
 
 }  // namespace
 
@@ -62,10 +81,49 @@ std::vector<PanelRow> BuildPanelRows(const Snapshot& s, unsigned processors, uns
     return rows;
 }
 
+std::vector<ProcessLine> BuildProcessLines(const std::vector<ProcessUsage>& processes, PanelView view, uint64_t memoryTotal) {
+    ProcessMetric metric = ProcessMetric::Cpu;
+    if (view == PanelView::Memory) metric = ProcessMetric::Memory;
+    if (view == PanelView::Disk) metric = ProcessMetric::Io;
+    const std::vector<ProcessUsage> top = TopProcesses(processes, metric, kTopProcesses);
+    const uint64_t busiest = top.empty() ? 0 : top.front().ioRate;
+
+    std::vector<ProcessLine> lines;
+    for (const ProcessUsage& process : top) {
+        ProcessLine line;
+        line.name = process.count > 1 ? process.name + L" (" + std::to_wstring(process.count) + L")" : process.name;
+        switch (metric) {
+            case ProcessMetric::Cpu: {
+                // Tenths below 10%, where most processes are.
+                wchar_t text[16];
+                swprintf_s(text, process.cpuPercent < 9.95 ? L"%.1f%%" : L"%.0f%%", process.cpuPercent);
+                line.value = text;
+                line.barPercent = static_cast<int>(std::lround(process.cpuPercent));
+                break;
+            }
+            case ProcessMetric::Memory:
+                line.value = FormatBytes(process.memory);
+                line.barPercent = memoryTotal ? static_cast<int>(process.memory * 100 / memoryTotal) : 0;
+                break;
+            case ProcessMetric::Io:
+                line.value = FormatRate(process.ioRate);
+                line.barPercent = busiest ? static_cast<int>(process.ioRate * 100 / busiest) : 0;
+                break;
+        }
+        lines.push_back(std::move(line));
+    }
+    return lines;
+}
+
 int Panel::Scale(int value) const { return MulDiv(value, static_cast<int>(GetDpiForWindow(window_)), 96); }
 
 SIZE Panel::Measure() const {
-    return {Scale(kWidth), Scale(kHeaderHeight) + Scale(kRowHeight) * static_cast<int>(rows_.size()) + Scale(kPadding)};
+    if (view_ == PanelView::Overview) {
+        return {Scale(kWidth), Scale(kHeaderHeight) + Scale(kRowHeight) * static_cast<int>(rows_.size()) + Scale(kPadding)};
+    }
+    // Always room for the full list, so the panel does not jump as it fills.
+    return {Scale(kWidth), Scale(kHeaderHeight) + Scale(kLineHeight) * static_cast<int>(kTopProcesses) + Scale(kFooterHeight) +
+                               Scale(kPadding) / 2};
 }
 
 RECT Panel::RowRect(size_t index) const {
@@ -73,10 +131,48 @@ RECT Panel::RowRect(size_t index) const {
     return {0, top, Scale(kWidth), top + Scale(kRowHeight)};
 }
 
+RECT Panel::LineRect(size_t index) const {
+    const int top = Scale(kHeaderHeight) + Scale(kLineHeight) * static_cast<int>(index);
+    return {0, top, Scale(kWidth), top + Scale(kLineHeight)};
+}
+
 RECT Panel::SettingsRect() const {
     const int size = Scale(32);
     const int right = Scale(kWidth) - Scale(kPadding) + Scale(8);
     return {right - size, Scale(4), right, Scale(4) + size};
+}
+
+RECT Panel::BackRect() const { return {Scale(8), Scale(4), Scale(kWidth) - Scale(48), Scale(36)}; }
+
+int Panel::HitTest(POINT point) const {
+    const RECT settings = SettingsRect();
+    if (PtInRect(&settings, point)) return kHotSettings;
+    if (view_ != PanelView::Overview) {
+        const RECT back = BackRect();
+        return PtInRect(&back, point) ? kHotBack : -1;
+    }
+    for (size_t i = 0; i < std::min(kDetailRows, rows_.size()); ++i) {
+        const RECT row = RowRect(i);
+        if (PtInRect(&row, point)) return static_cast<int>(i);
+    }
+    return -1;
+}
+
+void Panel::SetHot(int hot) {
+    if (hot == hot_) return;
+    const auto invalidate = [this](int spot) {
+        if (spot < 0) return;
+        const RECT rect = spot == kHotSettings ? SettingsRect() : spot == kHotBack ? BackRect() : RowRect(spot);
+        InvalidateRect(window_, &rect, FALSE);
+    };
+    invalidate(hot_);
+    hot_ = hot;
+    invalidate(hot_);
+    SetCursor(LoadCursorW(nullptr, hot_ >= 0 ? IDC_HAND : IDC_ARROW));
+    if (hot_ >= 0) {
+        TRACKMOUSEEVENT track{sizeof(track), TME_LEAVE, window_, 0};
+        TrackMouseEvent(&track);
+    }
 }
 
 void Panel::RefreshStyle() {
@@ -116,7 +212,9 @@ void Panel::Show(HINSTANCE instance, const RECT& anchor, const Snapshot& snapsho
                               nullptr, nullptr, instance, this);
     if (!window_) return;
 
+    view_ = PanelView::Overview;
     processors_ = GetActiveProcessorCount(ALL_PROCESSOR_GROUPS);
+    memoryTotal_ = snapshot.memoryTotal;
     rows_ = BuildPanelRows(snapshot, processors_, GetTickCount64());
     RefreshStyle();
 
@@ -125,23 +223,50 @@ void Panel::Show(HINSTANCE instance, const RECT& anchor, const Snapshot& snapsho
     const int margin = Scale(kMargin);
     const int center = (anchor.left + anchor.right) / 2;
     const int x = std::clamp<int>(center - size.cx / 2, work.left + margin, work.right - margin - size.cx);
-    const bool taskbarAtTop = anchor.bottom <= work.top + (work.bottom - work.top) / 2;
-    const int y = taskbarAtTop ? work.top + margin : work.bottom - margin - size.cy;
+    anchoredTop_ = anchor.bottom <= work.top + (work.bottom - work.top) / 2;
+    const int y = anchoredTop_ ? work.top + margin : work.bottom - margin - size.cy;
     SetWindowPos(window_, HWND_TOPMOST, x, y, size.cx, size.cy, SWP_SHOWWINDOW);
     SetForegroundWindow(window_);
 }
 
-void Panel::Update(const Snapshot& snapshot) {
+void Panel::Relayout() {
+    RECT bounds;
+    GetWindowRect(window_, &bounds);
+    const SIZE size = Measure();
+    const int y = anchoredTop_ ? bounds.top : bounds.bottom - size.cy;
+    SetWindowPos(window_, nullptr, bounds.left, y, size.cx, size.cy, SWP_NOZORDER | SWP_NOACTIVATE);
+    InvalidateRect(window_, nullptr, FALSE);
+}
+
+void Panel::SetView(PanelView view) {
+    view_ = view;
+    hot_ = -1;
+    lines_ = view == PanelView::Overview ? std::vector<ProcessLine>{} : BuildProcessLines(processes_, view, memoryTotal_);
+    Relayout();
+}
+
+void Panel::Update(const Snapshot& snapshot, const std::vector<ProcessUsage>& processes) {
     if (!window_) return;
+    memoryTotal_ = snapshot.memoryTotal;
+    processes_ = processes;
     std::vector<PanelRow> rows = BuildPanelRows(snapshot, processors_, GetTickCount64());
-    if (rows.size() != rows_.size()) {
-        // A battery appeared or went away: resize from the bottom edge.
+
+    if (view_ != PanelView::Overview) {
         rows_ = std::move(rows);
-        RECT bounds;
-        GetWindowRect(window_, &bounds);
-        const SIZE size = Measure();
-        SetWindowPos(window_, nullptr, bounds.left, bounds.bottom - size.cy, size.cx, size.cy, SWP_NOZORDER | SWP_NOACTIVATE);
-        InvalidateRect(window_, nullptr, FALSE);
+        std::vector<ProcessLine> lines = BuildProcessLines(processes_, view_, memoryTotal_);
+        for (size_t i = 0; i < std::max(lines.size(), lines_.size()); ++i) {
+            if (i < lines.size() && i < lines_.size() && lines[i] == lines_[i]) continue;
+            const RECT rect = LineRect(i);
+            InvalidateRect(window_, &rect, FALSE);
+        }
+        if (lines_.empty() != lines.empty()) InvalidateRect(window_, nullptr, FALSE);
+        lines_ = std::move(lines);
+        return;
+    }
+    if (rows.size() != rows_.size()) {
+        // A battery appeared or went away.
+        rows_ = std::move(rows);
+        Relayout();
         return;
     }
     // Only the rows whose text or bar changed are painted again.
@@ -158,24 +283,31 @@ void Panel::Close() {
     HWND window = window_;
     window_ = nullptr;
     closedAt_ = GetTickCount64();
-    activated_ = settingsHot_ = false;
+    activated_ = false;
+    hot_ = -1;
     DestroyWindow(window);
     for (HFONT* font : {&titleFont_, &labelFont_, &valueFont_, &detailFont_, &iconFont_}) {
         if (*font) DeleteObject(*font);
         *font = nullptr;
     }
-    rows_.clear();
-    rows_.shrink_to_fit();
+    std::vector<PanelRow>().swap(rows_);
+    std::vector<ProcessUsage>().swap(processes_);
+    std::vector<ProcessLine>().swap(lines_);
     if (onClosed) onClosed();
 }
 
 // --- Painting ---------------------------------------------------------------------
 
-void Panel::PaintRow(HDC dc, const PanelRow& row, const RECT& rect) {
+void Panel::PaintRow(HDC dc, const PanelRow& row, const RECT& rect, bool hot, bool clickable) {
     const int padding = Scale(kPadding);
     const int left = rect.left + padding;
     const int right = rect.right - padding;
     const int lineHeight = Scale(22);
+
+    if (hot) {
+        RECT highlight{rect.left + Scale(6), rect.top + Scale(2), rect.right - Scale(6), rect.bottom - Scale(2)};
+        FillRounded(dc, highlight, theme_.hover, Scale(4));
+    }
 
     SelectObject(dc, iconFont_);
     SetTextColor(dc, row.high ? kWarning : theme_.accent);
@@ -188,6 +320,17 @@ void Panel::PaintRow(HDC dc, const PanelRow& row, const RECT& rect) {
     RECT labelRect{textLeft, rect.top, right, rect.top + lineHeight};
     DrawTextW(dc, row.label.c_str(), -1, &labelRect, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
 
+    if (clickable) {
+        // A chevron hints that the row opens its top processes.
+        SelectObject(dc, detailFont_);
+        SetTextColor(dc, theme_.secondaryText);
+        HFONT chevron = CreateIconFont(GetDpiForWindow(window_), 7);
+        SelectObject(dc, chevron);
+        DrawTextW(dc, icons::kChevronRight, -1, &labelRect, DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
+        SelectObject(dc, detailFont_);
+        DeleteObject(chevron);
+        labelRect.right -= Scale(16);
+    }
     SelectObject(dc, valueFont_);
     SetTextColor(dc, row.high ? kWarning : theme_.text);
     DrawTextW(dc, row.value.c_str(), -1, &labelRect, DT_RIGHT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
@@ -210,6 +353,28 @@ void Panel::PaintRow(HDC dc, const PanelRow& row, const RECT& rect) {
     }
 }
 
+void Panel::PaintLine(HDC dc, const ProcessLine& line, const RECT& rect) {
+    const int left = rect.left + Scale(kPadding);
+    const int right = rect.right - Scale(kPadding);
+    const int barHeight = Scale(3);
+    RECT text{left, rect.top, right, rect.bottom - barHeight - Scale(3)};
+
+    SelectObject(dc, valueFont_);
+    SetTextColor(dc, theme_.text);
+    SIZE valueSize{};
+    GetTextExtentPoint32W(dc, line.value.c_str(), static_cast<int>(line.value.size()), &valueSize);
+    DrawTextW(dc, line.value.c_str(), -1, &text, DT_RIGHT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+
+    SelectObject(dc, labelFont_);
+    RECT name{text.left, text.top, text.right - valueSize.cx - Scale(12), text.bottom};
+    DrawTextW(dc, line.name.c_str(), -1, &name, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX | DT_END_ELLIPSIS);
+
+    const RECT track{left, text.bottom, right, text.bottom + barHeight};
+    FillRounded(dc, track, theme_.divider, 1);
+    const int fill = (track.right - track.left) * std::clamp(line.barPercent, 0, 100) / 100;
+    if (fill > 0) FillRounded(dc, {track.left, track.top, track.left + std::max(fill, barHeight), track.bottom}, theme_.accent, 1);
+}
+
 void Panel::Paint(HDC dc, const RECT& client) {
     HBRUSH background = CreateSolidBrush(theme_.background);
     FillRect(dc, &client, background);
@@ -218,21 +383,50 @@ void Panel::Paint(HDC dc, const RECT& client) {
     HGDIOBJ previous = SelectObject(dc, titleFont_);
 
     const int padding = Scale(kPadding);
-    SetTextColor(dc, theme_.text);
     RECT title{padding, 0, Scale(kWidth) - padding, Scale(kHeaderHeight)};
-    DrawTextW(dc, L"System", -1, &title, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+    if (view_ != PanelView::Overview) {
+        // The whole title is the back button.
+        const RECT back = BackRect();
+        if (hot_ == kHotBack) FillRounded(dc, back, theme_.hover, Scale(4));
+        SelectObject(dc, iconFont_);
+        SetTextColor(dc, theme_.secondaryText);
+        DrawTextW(dc, icons::kBack, -1, &title, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+        title.left += Scale(26);
+        SelectObject(dc, titleFont_);
+    }
+    SetTextColor(dc, theme_.text);
+    DrawTextW(dc, ViewTitle(view_), -1, &title, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
 
     const RECT settings = SettingsRect();
-    if (settingsHot_) FillRounded(dc, settings, theme_.hover, Scale(4));
+    if (hot_ == kHotSettings) FillRounded(dc, settings, theme_.hover, Scale(4));
     SelectObject(dc, iconFont_);
     SetTextColor(dc, theme_.secondaryText);
     RECT settingsText = settings;
     DrawTextW(dc, icons::kSettings, -1, &settingsText, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 
-    for (size_t i = 0; i < rows_.size(); ++i) {
-        const RECT rect = RowRect(i);
-        RECT overlap;
-        if (IntersectRect(&overlap, &rect, &client)) PaintRow(dc, rows_[i], rect);
+    RECT overlap;
+    if (view_ == PanelView::Overview) {
+        for (size_t i = 0; i < rows_.size(); ++i) {
+            const RECT rect = RowRect(i);
+            if (IntersectRect(&overlap, &rect, &client)) PaintRow(dc, rows_[i], rect, static_cast<int>(i) == hot_, i < kDetailRows);
+        }
+    } else {
+        for (size_t i = 0; i < lines_.size(); ++i) {
+            const RECT rect = LineRect(i);
+            if (IntersectRect(&overlap, &rect, &client)) PaintLine(dc, lines_[i], rect);
+        }
+        SelectObject(dc, detailFont_);
+        SetTextColor(dc, theme_.secondaryText);
+        if (lines_.empty()) {
+            RECT measuring = LineRect(0);
+            measuring.left += padding;
+            DrawTextW(dc, L"Measuring…", -1, &measuring, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+        }
+        const RECT last = LineRect(kTopProcesses - 1);
+        RECT footer{padding, last.bottom, Scale(kWidth) - padding, last.bottom + Scale(kFooterHeight)};
+        const wchar_t* note = view_ == PanelView::Disk ? L"Reads and writes of files and devices, per second."
+                                                       : L"Processes with the same name are added up.";
+        DrawTextW(dc, note, -1, &footer, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
     }
     SelectObject(dc, previous);
 }
@@ -272,38 +466,40 @@ LRESULT Panel::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
         }
         case WM_ERASEBKGND:
             return 1;
-        case WM_MOUSEMOVE: {
-            const POINT point{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
-            const RECT settings = SettingsRect();
-            const bool hot = PtInRect(&settings, point) != FALSE;
-            if (hot != settingsHot_) {
-                settingsHot_ = hot;
-                InvalidateRect(window_, &settings, FALSE);
-                if (hot) {
-                    TRACKMOUSEEVENT track{sizeof(track), TME_LEAVE, window_, 0};
-                    TrackMouseEvent(&track);
-                }
+        case WM_SETCURSOR:
+            if (LOWORD(lParam) == HTCLIENT) {
+                SetCursor(LoadCursorW(nullptr, hot_ >= 0 ? IDC_HAND : IDC_ARROW));
+                return TRUE;
             }
+            break;
+        case WM_MOUSEMOVE:
+            SetHot(HitTest({GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)}));
             return 0;
-        }
         case WM_MOUSELEAVE:
-            if (settingsHot_) {
-                settingsHot_ = false;
-                const RECT settings = SettingsRect();
-                InvalidateRect(window_, &settings, FALSE);
-            }
+            SetHot(-1);
             return 0;
         case WM_LBUTTONUP: {
-            const POINT point{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
-            const RECT settings = SettingsRect();
-            if (PtInRect(&settings, point)) {
+            const int hit = HitTest({GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)});
+            if (hit == kHotSettings) {
                 Close();
                 if (onSettings) onSettings();
+            } else if (hit == kHotBack) {
+                SetView(PanelView::Overview);
+            } else if (hit >= 0) {
+                SetView(static_cast<PanelView>(hit + 1));
             }
             return 0;
         }
         case WM_KEYDOWN:
-            if (wParam == VK_ESCAPE) Close();
+            if (wParam == VK_ESCAPE) {
+                if (view_ != PanelView::Overview) {
+                    SetView(PanelView::Overview);
+                } else {
+                    Close();
+                }
+            } else if (wParam == VK_BACK && view_ != PanelView::Overview) {
+                SetView(PanelView::Overview);
+            }
             return 0;
         case WM_ACTIVATE:
             // Closes when clicking anywhere else, like the system flyouts. When

@@ -51,6 +51,7 @@ bool TrayApp::Initialize(HINSTANCE instance, bool startedAtSignIn) {
     displayNotification_ = RegisterPowerSettingNotification(window_, &GUID_CONSOLE_DISPLAY_STATE, DEVICE_NOTIFY_WINDOW_HANDLE);
     EnableDarkMenus();
     panel_.onClosed = [this] {
+        processSampler_.Reset();
         RestartTimer();
         TrimWorkingSet();
     };
@@ -184,6 +185,8 @@ void TrayApp::ShowPanel() {
     }
     snapshot_ = sampler_.Sample();
     panel_.Show(instance_, anchor, snapshot_);
+    // The first reading, so the top lists are ready a second later.
+    if (panel_.IsOpen()) processSampler_.Sample();
     RestartTimer();
 }
 
@@ -210,7 +213,8 @@ void TrayApp::Sample() {
         wcsncpy_s(data.szTip, tooltip_.c_str(), _TRUNCATE);
         Shell_NotifyIconW(NIM_MODIFY, &data);
     }
-    panel_.Update(snapshot_);
+    // Processes are only read while the panel is open.
+    if (panel_.IsOpen()) panel_.Update(snapshot_, processSampler_.Sample());
     if (floating_.IsOpen() || taskbarView_.IsOpen()) {
         const MiniLines lines = MiniText(snapshot_);
         floating_.Update(lines);

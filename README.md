@@ -15,6 +15,7 @@ Vela lives in the notification area and is built to stay out of the way: a monit
 - 📈 **Tray icon**: the Vela logo, or the live CPU or memory percent as a number
 - 💬 **Tooltip**: hover the icon for CPU, RAM, disk, network speed and battery at a glance
 - 🪟 **Panel**: click the icon for a Windows 11–style flyout with every metric and its level bar
+- 🔎 **Top processes**: click CPU, Memory or Disk in the panel to see the 10 apps using the most of it, updated every second
 - 📌 **Floating widget**: a tiny always-on-top box with CPU, RAM and network speed. Drag it anywhere, it remembers where
 - 🧷 **On the taskbar**: the same numbers right next to the clock, blended into your taskbar
 - 🧠 **CPU**: total usage, logical processors and uptime
@@ -54,6 +55,7 @@ Uninstalling (Settings → Apps) removes Vela, its startup entry and its setting
 | Quick look | Hover the tray icon |
 | Open the panel | Left-click the tray icon |
 | Close the panel | Click anywhere else, or `Esc` |
+| Top 10 processes | Click **CPU**, **Memory** or **Disk** in the panel; click the title, `Esc` or `Backspace` to go back |
 | Floating widget | Right-click the tray icon → **Floating widget**. Drag to move, double-click for the panel, right-click for the menu |
 | Numbers on the taskbar | Right-click the tray icon → **Show on taskbar**. Click them for the panel, right-click for the menu |
 | Settings | ⚙️ in the panel, or right-click the tray icon → **Settings** |
@@ -72,7 +74,7 @@ Uninstalling (Settings → Apps) removes Vela, its startup entry and its setting
 
 ## ⚡ Performance
 
-Vela reads the system counters every 2 seconds and only redraws the tray icon or a panel row when what you would see actually changes. The panel only exists while it is open.
+Vela reads the system counters every 2 seconds and only redraws the tray icon or a panel row when what you would see actually changes. The panel only exists while it is open, and processes are only read while it is open: one system call per second for all of them, with no handle opened to any process.
 
 Measured on the development PC (Windows 11, default settings, panel closed, over 60 s):
 
