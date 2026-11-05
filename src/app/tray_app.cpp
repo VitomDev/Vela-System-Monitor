@@ -190,7 +190,7 @@ void TrayApp::ShowPanel(PanelView view) {
         anchor = {cursor.x, cursor.y, cursor.x + 1, cursor.y + 1};
     }
     ReadSnapshot(true);
-    panel_.Show(instance_, anchor, snapshot_, settings_.panelMetrics, &history_, view);
+    panel_.Show(instance_, anchor, snapshot_, settings_.panelMetrics, settings_.graphs ? &history_ : nullptr, view);
     // The first reading, so the top lists are ready a second later.
     if (panel_.IsOpen()) processSampler_.Sample(gpuSampler_.IsOpen() ? &gpuByProcess_ : nullptr);
     RestartTimer();

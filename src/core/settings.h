@@ -34,6 +34,8 @@ struct Settings {
     uint32_t miniMetrics = metric::kCpu | metric::kMemory | metric::kNetwork;
     // A notification when CPU, GPU or memory stay high.
     bool alerts = false;
+    // History graphs in the panel instead of plain bars.
+    bool graphs = true;
     // The always-on-top mini widget and the view on the taskbar.
     bool floating = false;
     bool taskbar = false;

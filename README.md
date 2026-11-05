@@ -76,6 +76,7 @@ Uninstalling (Settings → Apps) removes Vela, its startup entry and its setting
 - **Show on the taskbar**, on or off, and its **position**: next to the clock or at the left (dragging it there works too)
 - **Update**: every 1, 2 (default) or 5 seconds. The panel always updates every second while it is open
 - **Start with Windows**
+- **History graphs in the panel**: on by default; off shows plain bars
 - **Warn when CPU, GPU or memory stay at 90%**: off by default. A warning comes after 30 seconds at 90% or more, and the same one only comes back once usage has dropped and 10 minutes have passed
 
 ---

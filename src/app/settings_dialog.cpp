@@ -24,6 +24,7 @@ enum ControlId {
     kTaskbarSpotButton,
     kAutostartToggle,
     kAlertsToggle,
+    kGraphsToggle,
     kCancel = IDCANCEL,
     kSave = IDOK,
     // One chip per metric, in kChips order.
@@ -157,7 +158,9 @@ void Layout(State& state) {
     text(padding, y, width - 2 * padding, scale(28), L"In the panel", TextStyle::Label);
     y += scale(28);
     chipRow(y, kPanelChipFirst);
-    y += scale(30) + scale(10);
+    y += scale(30) + scale(4);
+    labelRow(y, L"History graphs in the panel", kGraphsToggle, scale(44), scale(20));
+    y += row;
     text(padding, y, width - 2 * padding, scale(28), L"On the taskbar and in the floating widget", TextStyle::Label);
     y += scale(28);
     chipRow(y, kMiniChipFirst);
@@ -337,6 +340,7 @@ void DrawControl(State& state, const DRAWITEMSTRUCT& item) {
         case kTaskbarSpotButton: DrawChoice(state, item, TaskbarSpotName(state.settings.taskbarSpot)); break;
         case kAutostartToggle: DrawToggle(state, item, state.autostart); break;
         case kAlertsToggle: DrawToggle(state, item, state.settings.alerts); break;
+        case kGraphsToggle: DrawToggle(state, item, state.settings.graphs); break;
         case kSave: DrawButton(item, state.theme, fonts, ButtonStyle::Primary, nullptr, L"Save", radius); break;
         case kCancel: DrawButton(item, state.theme, fonts, ButtonStyle::Standard, nullptr, L"Cancel", radius); break;
     }
@@ -437,11 +441,13 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
                 case kFloatingToggle:
                 case kTaskbarToggle:
                 case kAutostartToggle:
-                case kAlertsToggle: {
+                case kAlertsToggle:
+                case kGraphsToggle: {
                     const int id = LOWORD(wParam);
                     bool& option = id == kFloatingToggle ? state->settings.floating
                                    : id == kTaskbarToggle ? state->settings.taskbar
                                    : id == kAlertsToggle  ? state->settings.alerts
+                                   : id == kGraphsToggle  ? state->settings.graphs
                                                           : state->autostart;
                     option = !option;
                     InvalidateRect(GetDlgItem(window, id), nullptr, FALSE);
@@ -514,7 +520,7 @@ void ShowSettingsDialog(HINSTANCE instance, HWND owner, const Settings& current,
     std::vector<int> ids{kTrayIconButton, kIntervalButton};
     for (int i = 0; i < kChipCount; ++i) ids.push_back(kPanelChipFirst + i);
     for (int i = 0; i < kChipCount; ++i) ids.push_back(kMiniChipFirst + i);
-    ids.insert(ids.end(), {kFloatingToggle, kTaskbarToggle, kTaskbarSpotButton, kAutostartToggle, kAlertsToggle, kCancel, kSave});
+    ids.insert(ids.end(), {kFloatingToggle, kTaskbarToggle, kTaskbarSpotButton, kAutostartToggle, kAlertsToggle, kGraphsToggle, kCancel, kSave});
     for (int id : ids) {
         HWND control = CreateWindowExW(0, L"BUTTON", L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW, 0, 0, 0, 0,
                                        window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)), instance, nullptr);
