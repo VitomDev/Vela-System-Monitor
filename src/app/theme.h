@@ -59,6 +59,7 @@ inline constexpr wchar_t kSettings[] = L"\uE713";
 inline constexpr wchar_t kBack[] = L"\uE72B";
 inline constexpr wchar_t kChevronRight[] = L"\uE76C";
 inline constexpr wchar_t kCpu[] = L"\uE950";
+inline constexpr wchar_t kGpu[] = L"\uE7F4";
 inline constexpr wchar_t kMemory[] = L"\uE964";
 inline constexpr wchar_t kDisk[] = L"\uEDA2";
 inline constexpr wchar_t kNetwork[] = L"\uE968";

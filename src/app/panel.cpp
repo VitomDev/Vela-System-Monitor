@@ -1,6 +1,7 @@
 #include "app/panel.h"
 
 #include <windowsx.h>
+#include <shellapi.h>
 
 #include <algorithm>
 #include <cmath>
@@ -15,7 +16,7 @@ constexpr wchar_t kClassName[] = L"VelaPanel";
 constexpr int kWidth = 340;
 constexpr int kPadding = 16;
 constexpr int kHeaderHeight = 40;
-constexpr int kRowHeight = 60;
+constexpr int kRowHeight = 64;
 constexpr int kLineHeight = 30;
 constexpr int kFooterHeight = 28;
 constexpr int kBarHeight = 4;
@@ -33,6 +34,7 @@ std::wstring Percent(int value) { return std::to_wstring(value) + L"%"; }
 const wchar_t* ViewTitle(PanelView view) {
     switch (view) {
         case PanelView::Cpu: return L"CPU \u00B7 top processes";
+        case PanelView::Gpu: return L"GPU \u00B7 top processes";
         case PanelView::Memory: return L"Memory \u00B7 top processes";
         case PanelView::Disk: return L"Disk activity \u00B7 top processes";
         case PanelView::Overview: break;
@@ -43,22 +45,29 @@ const wchar_t* ViewTitle(PanelView view) {
 }  // namespace
 
 std::vector<PanelRow> BuildPanelRows(const Snapshot& s, unsigned processors, unsigned long long uptimeMs,
-                                     uint32_t metrics) {
+                                     uint32_t metrics, const History* history) {
     std::vector<PanelRow> rows;
-    // Nothing left to show (only a battery this PC does not have): CPU at least.
-    if (!(metrics & ~metric::kBattery) && !s.battery.present) metrics = metric::kCpu;
+    const auto graph = [history](HistorySeries series) { return history ? history->Values(series) : std::vector<float>{}; };
 
     if (metrics & metric::kCpu) {
         const int cpu = static_cast<int>(s.cpuPercent + 0.5);
         rows.push_back({icons::kCpu, L"CPU", Percent(cpu),
                         std::to_wstring(processors) + L" logical processors \u00B7 up " +
                             FormatDuration(static_cast<long long>(uptimeMs / 1000)),
-                        cpu, cpu >= kHighPercent, PanelView::Cpu});
+                        cpu, cpu >= kHighPercent, PanelView::Cpu, graph(HistorySeries::Cpu)});
+    }
+    if ((metrics & metric::kGpu) && s.gpu.present) {
+        const int gpu = static_cast<int>(s.gpu.percent + 0.5);
+        const std::wstring detail = s.gpu.memoryTotal ? L"Video memory " + FormatBytes(s.gpu.memoryUsed) + L" of " +
+                                                            FormatBytes(s.gpu.memoryTotal)
+                                                      : L"Busiest engine";
+        rows.push_back({icons::kGpu, L"GPU", Percent(gpu), detail, gpu, gpu >= kHighPercent, PanelView::Gpu,
+                        graph(HistorySeries::Gpu)});
     }
     if (metrics & metric::kMemory) {
         rows.push_back({icons::kMemory, L"Memory", Percent(s.MemoryPercent()),
                         FormatBytes(s.memoryUsed) + L" of " + FormatBytes(s.memoryTotal), s.MemoryPercent(),
-                        s.MemoryPercent() >= kHighPercent, PanelView::Memory});
+                        s.MemoryPercent() >= kHighPercent, PanelView::Memory, graph(HistorySeries::Memory)});
     }
     if (metrics & metric::kDisk) {
         std::wstring disk = FormatBytes(s.diskUsed) + L" of " + FormatBytes(s.diskTotal);
@@ -68,7 +77,8 @@ std::vector<PanelRow> BuildPanelRows(const Snapshot& s, unsigned processors, uns
     }
     if (metrics & metric::kNetwork) {
         rows.push_back({icons::kNetwork, L"Network", L"",
-                        L"\u2193 " + FormatRate(s.networkDown) + L"   \u2191 " + FormatRate(s.networkUp), -1, false});
+                        L"\u2193 " + FormatRate(s.networkDown) + L"   \u2191 " + FormatRate(s.networkUp), -1, false,
+                        PanelView::Overview, graph(HistorySeries::Network)});
     }
 
     if ((metrics & metric::kBattery) && s.battery.present) {
@@ -85,6 +95,8 @@ std::vector<PanelRow> BuildPanelRows(const Snapshot& s, unsigned processors, uns
         rows.push_back({icons::kBattery, L"Battery", Percent(s.battery.percent), state, s.battery.percent,
                         !s.battery.pluggedIn && s.battery.percent <= 10});
     }
+    // Nothing could be shown (a battery or GPU this PC does not have): CPU at least.
+    if (rows.empty() && metrics != metric::kCpu) return BuildPanelRows(s, processors, uptimeMs, metric::kCpu, history);
     return rows;
 }
 
@@ -92,6 +104,7 @@ std::vector<ProcessLine> BuildProcessLines(const std::vector<ProcessUsage>& proc
     ProcessMetric metric = ProcessMetric::Cpu;
     if (view == PanelView::Memory) metric = ProcessMetric::Memory;
     if (view == PanelView::Disk) metric = ProcessMetric::Io;
+    if (view == PanelView::Gpu) metric = ProcessMetric::Gpu;
     const std::vector<ProcessUsage> top = TopProcesses(processes, metric, kTopProcesses);
     const uint64_t busiest = top.empty() ? 0 : top.front().ioRate;
 
@@ -99,13 +112,17 @@ std::vector<ProcessLine> BuildProcessLines(const std::vector<ProcessUsage>& proc
     for (const ProcessUsage& process : top) {
         ProcessLine line;
         line.name = process.count > 1 ? process.name + L" (" + std::to_wstring(process.count) + L")" : process.name;
+        line.exe = process.name;
+        line.pids = process.pids;
         switch (metric) {
-            case ProcessMetric::Cpu: {
+            case ProcessMetric::Cpu:
+            case ProcessMetric::Gpu: {
                 // Tenths below 10%, where most processes are.
+                const double percent = metric == ProcessMetric::Cpu ? process.cpuPercent : process.gpuPercent;
                 wchar_t text[16];
-                swprintf_s(text, process.cpuPercent < 9.95 ? L"%.1f%%" : L"%.0f%%", process.cpuPercent);
+                swprintf_s(text, percent < 9.95 ? L"%.1f%%" : L"%.0f%%", percent);
                 line.value = text;
-                line.barPercent = static_cast<int>(std::lround(process.cpuPercent));
+                line.barPercent = static_cast<int>(std::lround(percent));
                 break;
             }
             case ProcessMetric::Memory:
@@ -196,7 +213,8 @@ void Panel::RefreshStyle() {
     ApplyWindowStyle(window_, theme_);
 }
 
-void Panel::Show(HINSTANCE instance, const RECT& anchor, const Snapshot& snapshot, uint32_t metrics) {
+void Panel::Show(HINSTANCE instance, const RECT& anchor, const Snapshot& snapshot, uint32_t metrics, const History* history,
+                 PanelView view) {
     if (window_) {
         SetForegroundWindow(window_);
         return;
@@ -219,11 +237,13 @@ void Panel::Show(HINSTANCE instance, const RECT& anchor, const Snapshot& snapsho
                               nullptr, nullptr, instance, this);
     if (!window_) return;
 
-    view_ = PanelView::Overview;
+    view_ = view;
+    status_.clear();
     processors_ = GetActiveProcessorCount(ALL_PROCESSOR_GROUPS);
     memoryTotal_ = snapshot.memoryTotal;
     metrics_ = metrics;
-    rows_ = BuildPanelRows(snapshot, processors_, GetTickCount64(), metrics_);
+    history_ = history;
+    rows_ = BuildPanelRows(snapshot, processors_, GetTickCount64(), metrics_, history_);
     RefreshStyle();
 
     // Next to the tray icon, inside the work area, like the system flyouts.
@@ -249,6 +269,7 @@ void Panel::Relayout() {
 void Panel::SetView(PanelView view) {
     view_ = view;
     hot_ = -1;
+    status_.clear();
     lines_ = view == PanelView::Overview ? std::vector<ProcessLine>{} : BuildProcessLines(processes_, view, memoryTotal_);
     Relayout();
 }
@@ -257,7 +278,7 @@ void Panel::Update(const Snapshot& snapshot, const std::vector<ProcessUsage>& pr
     if (!window_) return;
     memoryTotal_ = snapshot.memoryTotal;
     processes_ = processes;
-    std::vector<PanelRow> rows = BuildPanelRows(snapshot, processors_, GetTickCount64(), metrics_);
+    std::vector<PanelRow> rows = BuildPanelRows(snapshot, processors_, GetTickCount64(), metrics_, history_);
 
     if (view_ != PanelView::Overview) {
         rows_ = std::move(rows);
@@ -348,7 +369,10 @@ void Panel::PaintRow(HDC dc, const PanelRow& row, const RECT& rect, bool hot, bo
     RECT detailRect{textLeft, rect.top + lineHeight, right, rect.top + lineHeight + Scale(18)};
     DrawTextW(dc, row.detail.c_str(), -1, &detailRect, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX | DT_END_ELLIPSIS);
 
-    if (row.barPercent >= 0) {
+    if (!row.graph.empty()) {
+        const RECT area{textLeft, detailRect.bottom + Scale(3), right, rect.bottom - Scale(5)};
+        PaintGraph(dc, row.graph, area, row.high ? kWarning : theme_.accent);
+    } else if (row.barPercent >= 0) {
         const int barTop = detailRect.bottom + Scale(6);
         const int barHeight = Scale(kBarHeight);
         const RECT track{textLeft, barTop, right, barTop + barHeight};
@@ -357,6 +381,116 @@ void Panel::PaintRow(HDC dc, const PanelRow& row, const RECT& rect, bool hot, bo
         if (fill > 0) {
             const RECT level{track.left, track.top, track.left + std::max(fill, barHeight), track.bottom};
             FillRounded(dc, level, row.high ? kWarning : theme_.accent, barHeight / 2);
+        }
+    }
+}
+
+// An area chart of the last readings, newest at the right, over a faint
+// baseline. Values are 0-1.
+void Panel::PaintGraph(HDC dc, const std::vector<float>& values, const RECT& rect, COLORREF color) {
+    const int width = rect.right - rect.left;
+    const int height = rect.bottom - rect.top;
+    HPEN baseline = CreatePen(PS_SOLID, 1, theme_.divider);
+    HGDIOBJ previousPen = SelectObject(dc, baseline);
+    MoveToEx(dc, rect.left, rect.bottom - 1, nullptr);
+    LineTo(dc, rect.right, rect.bottom - 1);
+    SelectObject(dc, previousPen);
+    DeleteObject(baseline);
+    if (values.size() < 2) return;
+
+    // Always the full width for a full history, so the graph scrolls.
+    const double step = static_cast<double>(width) / (History::kCapacity - 1);
+    const double start = rect.right - step * static_cast<double>(values.size() - 1);
+    std::vector<POINT> points;
+    points.reserve(values.size() + 2);
+    for (size_t i = 0; i < values.size(); ++i) {
+        points.push_back({static_cast<LONG>(std::lround(start + step * static_cast<double>(i))),
+                          rect.bottom - 1 - static_cast<LONG>(std::lround(values[i] * (height - 1)))});
+    }
+    // The area in a mix of the color and the background, then the line.
+    const auto mix = [&](int shift) {
+        return static_cast<int>((((color >> shift) & 0xFF) * 3 + ((theme_.background >> shift) & 0xFF) * 7) / 10);
+    };
+    std::vector<POINT> area = points;
+    area.push_back({points.back().x, rect.bottom});
+    area.push_back({points.front().x, rect.bottom});
+    HBRUSH fill = CreateSolidBrush(RGB(mix(0), mix(8), mix(16)));
+    HGDIOBJ previousBrush = SelectObject(dc, fill);
+    previousPen = SelectObject(dc, GetStockObject(NULL_PEN));
+    Polygon(dc, area.data(), static_cast<int>(area.size()));
+    HPEN line = CreatePen(PS_SOLID, std::max(1, Scale(1)), color);
+    SelectObject(dc, line);
+    Polyline(dc, points.data(), static_cast<int>(points.size()));
+    SelectObject(dc, previousPen);
+    SelectObject(dc, previousBrush);
+    DeleteObject(line);
+    DeleteObject(fill);
+}
+
+void Panel::SetStatus(std::wstring status) {
+    status_ = std::move(status);
+    InvalidateRect(window_, nullptr, FALSE);
+}
+
+namespace {
+
+// Ends every process of a group; the count that could not be ended.
+size_t EndProcesses(const std::vector<uint32_t>& pids) {
+    size_t failed = 0;
+    for (uint32_t pid : pids) {
+        HANDLE process = OpenProcess(PROCESS_TERMINATE, FALSE, pid);
+        if (!process || !TerminateProcess(process, 1)) ++failed;
+        if (process) CloseHandle(process);
+    }
+    return failed;
+}
+
+bool OpenFileLocation(const std::vector<uint32_t>& pids) {
+    for (uint32_t pid : pids) {
+        HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+        if (!process) continue;
+        wchar_t path[MAX_PATH * 2];
+        DWORD size = static_cast<DWORD>(std::size(path));
+        const bool found = QueryFullProcessImageNameW(process, 0, path, &size) != 0;
+        CloseHandle(process);
+        if (!found) continue;
+        const std::wstring arguments = L"/select,\"" + std::wstring(path) + L"\"";
+        return reinterpret_cast<INT_PTR>(ShellExecuteW(nullptr, nullptr, L"explorer.exe", arguments.c_str(), nullptr,
+                                                       SW_SHOWNORMAL)) > 32;
+    }
+    return false;
+}
+
+}  // namespace
+
+void Panel::ShowProcessMenu(POINT point) {
+    size_t index = lines_.size();
+    for (size_t i = 0; i < lines_.size(); ++i) {
+        const RECT rect = LineRect(i);
+        if (PtInRect(&rect, point)) index = i;
+    }
+    if (index == lines_.size()) return;
+    // Copied: the list may be refreshed while the menu is open.
+    const ProcessLine line = lines_[index];
+    enum { kEnd = 1, kLocation };
+    HMENU menu = CreatePopupMenu();
+    const std::wstring end = L"End " + line.exe;
+    AppendMenuW(menu, MF_STRING, kEnd, end.c_str());
+    AppendMenuW(menu, MF_STRING, kLocation, L"Open file location");
+    POINT screen = point;
+    ClientToScreen(window_, &screen);
+    const int command = TrackPopupMenuEx(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON, screen.x, screen.y, window_, nullptr);
+    DestroyMenu(menu);
+    if (!window_) return;
+    if (command == kEnd) {
+        const size_t failed = EndProcesses(line.pids);
+        SetStatus(failed == 0 ? L"Ended " + line.exe + L"."
+                              : L"Could not end " + line.exe + L": it may need administrator rights.");
+    } else if (command == kLocation) {
+        if (OpenFileLocation(line.pids)) {
+            Close();
+        } else {
+            SetStatus(L"Windows does not let Vela see where " + line.exe + L" is.");
         }
     }
 }
@@ -432,9 +566,10 @@ void Panel::Paint(HDC dc, const RECT& client) {
         }
         const RECT last = LineRect(kTopProcesses - 1);
         RECT footer{padding, last.bottom, Scale(kWidth) - padding, last.bottom + Scale(kFooterHeight)};
-        const wchar_t* note = view_ == PanelView::Disk ? L"Reads and writes of files and devices, per second."
-                                                       : L"Processes with the same name are added up.";
-        DrawTextW(dc, note, -1, &footer, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+        const wchar_t* note = view_ == PanelView::Disk ? L"File and device reads plus writes \u00B7 right-click for options"
+                                                       : L"Same names are added up \u00B7 right-click for options";
+        DrawTextW(dc, status_.empty() ? note : status_.c_str(), -1, &footer,
+                  DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
     }
     SelectObject(dc, previous);
 }
@@ -498,6 +633,9 @@ LRESULT Panel::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
             }
             return 0;
         }
+        case WM_RBUTTONUP:
+            if (view_ != PanelView::Overview) ShowProcessMenu({GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)});
+            return 0;
         case WM_KEYDOWN:
             if (wParam == VK_ESCAPE) {
                 if (view_ != PanelView::Overview) {

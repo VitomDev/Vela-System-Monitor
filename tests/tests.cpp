@@ -7,12 +7,16 @@
 
 #include "app/panel.h"
 #include "app/tray_icon.h"
+#include "core/alerts.h"
+#include "core/gpu.h"
+#include "core/history.h"
 #include "core/metrics.h"
 #include "core/sampler.h"
 #include "core/settings.h"
 
 #include <windows.h>
 
+#include <cmath>
 #include <filesystem>
 #include <functional>
 #include <iostream>
@@ -187,11 +191,75 @@ TEST(MiniTextFitsTheWidestLines) {
     busy.diskRead = 999 * 1024;
     busy.networkDown = busy.networkUp = 999 * 1024;
     busy.battery = {true, 100, false, false, -1};
+    busy.gpu = {true, true, 100, 0, 0};
     for (uint32_t metrics = 1; metrics <= metric::kAll; ++metrics) {
         const MiniLines widest = WidestMiniText(metrics);
         CHECK(MiniText(busy, metrics).first.size() <= widest.first.size());
         CHECK(MiniText(busy, metrics).second.size() <= widest.second.size());
     }
+}
+
+TEST(GpuIsAsBusyAsItsBusiestEngine) {
+    const std::wstring engine3d = L"_luid_0x00000000_0x0000D1C5_phys_0_eng_0_engtype_3D";
+    const std::wstring video = L"_luid_0x00000000_0x0000D1C5_phys_0_eng_5_engtype_VideoDecode";
+    const GpuEngineUsage usage = SumGpuEngines({{L"pid_10" + engine3d, 20},
+                                                {L"pid_20" + engine3d, 15},
+                                                {L"pid_20" + video, 50},
+                                                {L"pid_30" + engine3d, 0},
+                                                {L"not_an_engine", 99}});
+    // 3D adds up to 35%, video decode is busier at 50%.
+    CHECK(std::abs(usage.total - 50) < 0.01);
+    CHECK(std::abs(usage.byProcess.at(10) - 20) < 0.01);
+    CHECK(std::abs(usage.byProcess.at(20) - 50) < 0.01);
+    CHECK(!usage.byProcess.contains(30));
+    CHECK((GpuInfo{true, true, 0, 512, 2048}.MemoryPercent() == 25));
+}
+
+TEST(HistoryKeepsTheLastReadingsScaled) {
+    History history;
+    CHECK(history.Values(HistorySeries::Cpu).empty());
+    Snapshot s = SampleSnapshot();
+    for (int i = 0; i < 70; ++i) {
+        s.cpuPercent = i;
+        s.networkDown = static_cast<uint64_t>(i) * 100;
+        s.networkUp = 0;
+        history.Push(s);
+    }
+    const std::vector<float> cpu = history.Values(HistorySeries::Cpu);
+    CHECK(history.Values(HistorySeries::Gpu).empty());  // Never measured
+    CHECK(cpu.size() == History::kCapacity);
+    CHECK(std::abs(cpu.front() - 0.10f) < 0.001f && std::abs(cpu.back() - 0.69f) < 0.001f);
+    // Network against its own peak.
+    CHECK(std::abs(history.Values(HistorySeries::Network).back() - 1.0f) < 0.001f);
+}
+
+TEST(AlertsWarnOnceForSustainedHighUsage) {
+    UsageAlerts alerts;
+    Snapshot s = SampleSnapshot();
+    s.cpuPercent = 95;
+    CHECK(alerts.Update(s, 1'000) == 0);
+    CHECK(alerts.Update(s, 20'000) == 0);
+    CHECK(alerts.Update(s, 31'000) == metric::kCpu);
+    CHECK(alerts.Update(s, 60'000) == 0);  // Once
+    // Dropping a little is not enough to warn again, even after the cooldown.
+    s.cpuPercent = 85;
+    alerts.Update(s, 100'000);
+    s.cpuPercent = 95;
+    CHECK(alerts.Update(s, 700'000) == 0);
+    CHECK(alerts.Update(s, 800'000) == 0);
+    s.cpuPercent = 50;
+    alerts.Update(s, 810'000);
+    s.cpuPercent = 95;
+    alerts.Update(s, 820'000);
+    CHECK(alerts.Update(s, 851'000) == metric::kCpu);
+    // A short spike never warns.
+    UsageAlerts spike;
+    s.cpuPercent = 99;
+    spike.Update(s, 1'000);
+    s.cpuPercent = 10;
+    spike.Update(s, 10'000);
+    s.cpuPercent = 99;
+    CHECK(spike.Update(s, 35'000) == 0);
 }
 
 TEST(SamplerReadsPlausibleValues) {
@@ -292,6 +360,16 @@ TEST(PanelRowsDescribeTheSnapshot) {
     s.battery = {};
     rows = BuildPanelRows(s, 8, 0, metric::kBattery);
     CHECK(rows.size() == 1 && rows[0].label == L"CPU");
+
+    // The GPU after the CPU, with its video memory; graphs once there is history.
+    s.gpu = {true, true, 41.6, 2ull << 30, 8ull << 30};
+    History history;
+    history.Push(s);
+    history.Push(s);
+    rows = BuildPanelRows(s, 8, 0, metric::kCpu | metric::kGpu | metric::kDisk, &history);
+    CHECK(rows.size() == 3 && rows[1].label == L"GPU" && rows[1].value == L"42%");
+    CHECK(rows[1].detail == L"Video memory 2.0 GB of 8.0 GB" && rows[1].opens == PanelView::Gpu);
+    CHECK(rows[0].graph.size() == 2 && rows[1].graph.size() == 2 && rows[2].graph.empty());
 }
 
 TEST(TrayIconOnlyChangesWhenVisible) {
@@ -359,6 +437,8 @@ TEST(SettingsPersist) {
     CHECK(settings.taskbarSpot == TaskbarSpot::Clock);
     settings.taskbarSpot = TaskbarSpot::Custom;
     settings.taskbarOffset = 640;
+    CHECK(!settings.alerts);
+    settings.alerts = true;
     CHECK(settings.Save(kTestSettingsKey));
     const Settings loaded = Settings::Load(kTestSettingsKey);
     CHECK(loaded.trayIcon == TrayIcon::MemoryPercent && loaded.intervalSeconds == 5);
@@ -366,6 +446,20 @@ TEST(SettingsPersist) {
     CHECK(loaded.panelMetrics == (metric::kCpu | metric::kBattery) && loaded.miniMetrics == metric::kDisk);
     CHECK(loaded.floatingPosition && loaded.floatingPosition->x == -1500 && loaded.floatingPosition->y == 40);
     CHECK(loaded.taskbarSpot == TaskbarSpot::Custom && loaded.taskbarOffset == 640);
+    CHECK(loaded.alerts);
+    RegDeleteTreeW(HKEY_CURRENT_USER, kTestSettingsKey);
+
+    // Saved before the GPU existed: the panel shows it, the mini views do not.
+    const DWORD oldAll = 31, cpuOnly = metric::kCpu;
+    RegSetKeyValueW(HKEY_CURRENT_USER, kTestSettingsKey, L"PanelMetrics", REG_DWORD, &oldAll, sizeof(oldAll));
+    RegSetKeyValueW(HKEY_CURRENT_USER, kTestSettingsKey, L"MiniMetrics", REG_DWORD, &cpuOnly, sizeof(cpuOnly));
+    const Settings upgraded = Settings::Load(kTestSettingsKey);
+    CHECK(upgraded.panelMetrics == metric::kAll && upgraded.miniMetrics == metric::kCpu);
+    // Once saved, hiding it sticks.
+    Settings hidden = upgraded;
+    hidden.panelMetrics = metric::kCpu;
+    CHECK(hidden.Save(kTestSettingsKey));
+    CHECK(Settings::Load(kTestSettingsKey).panelMetrics == metric::kCpu);
     RegDeleteTreeW(HKEY_CURRENT_USER, kTestSettingsKey);
 }
 

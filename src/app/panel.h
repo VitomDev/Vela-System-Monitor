@@ -1,6 +1,7 @@
 #pragma once
 
 #include "app/theme.h"
+#include "core/history.h"
 #include "core/metrics.h"
 #include "core/processes.h"
 
@@ -13,7 +14,7 @@
 namespace vela {
 
 // The overview, or the processes using the most of one resource.
-enum class PanelView { Overview, Cpu, Memory, Disk };
+enum class PanelView { Overview, Cpu, Gpu, Memory, Disk };
 
 // One line of the panel: a metric with its value, details and level bar.
 struct PanelRow {
@@ -24,13 +25,14 @@ struct PanelRow {
     int barPercent = -1;  // -1: no bar
     bool high = false;
     PanelView opens = PanelView::Overview;  // The top list a click opens, if any
+    std::vector<float> graph;  // Recent values, 0-1, drawn instead of the bar
 
     bool operator==(const PanelRow&) const = default;
 };
 
 // Only the `metrics` chosen in Settings; CPU when none of them can be shown.
 std::vector<PanelRow> BuildPanelRows(const Snapshot& snapshot, unsigned processors, unsigned long long uptimeMs,
-                                     uint32_t metrics = metric::kAll);
+                                     uint32_t metrics = metric::kAll, const History* history = nullptr);
 
 // One process in a top list. The bar is relative to the whole system for
 // CPU and memory, and to the busiest process for disk activity.
@@ -38,6 +40,8 @@ struct ProcessLine {
     std::wstring name;
     std::wstring value;
     int barPercent = 0;
+    std::wstring exe;  // The group's executable name
+    std::vector<uint32_t> pids;
 
     bool operator==(const ProcessLine&) const = default;
 };
@@ -48,7 +52,9 @@ std::vector<ProcessLine> BuildProcessLines(const std::vector<ProcessUsage>& proc
 
 // The small flyout opened from the tray icon, in the style of the Windows 11
 // quick settings. It only exists while open, so it costs nothing when closed.
-// CPU, memory and disk open the top processes for that resource.
+// CPU, GPU, memory and disk open the top processes for that resource, where a
+// right-click on a process ends it or shows its file. The history the
+// graphs draw belongs to the app, which keeps it while the panel is closed.
 class Panel {
 public:
     std::function<void()> onClosed;
@@ -60,7 +66,8 @@ public:
     // that closed it does not open it again.
     bool JustClosed() const { return GetTickCount64() - closedAt_ < 300; }
 
-    void Show(HINSTANCE instance, const RECT& anchor, const Snapshot& snapshot, uint32_t metrics);
+    void Show(HINSTANCE instance, const RECT& anchor, const Snapshot& snapshot, uint32_t metrics, const History* history,
+              PanelView view = PanelView::Overview);
     void Update(const Snapshot& snapshot, const std::vector<ProcessUsage>& processes);
     void Close();
 
@@ -84,6 +91,9 @@ private:
     void Paint(HDC dc, const RECT& client);
     void PaintRow(HDC dc, const PanelRow& row, const RECT& rect, bool hot, bool clickable);
     void PaintLine(HDC dc, const ProcessLine& line, const RECT& rect);
+    void PaintGraph(HDC dc, const std::vector<float>& values, const RECT& rect, COLORREF color);
+    void ShowProcessMenu(POINT point);
+    void SetStatus(std::wstring status);
 
     HWND window_ = nullptr;
     ULONGLONG closedAt_ = 0;
@@ -95,6 +105,8 @@ private:
     uint64_t memoryTotal_ = 0;
     unsigned processors_ = 0;
     uint32_t metrics_ = metric::kAll;
+    const History* history_ = nullptr;
+    std::wstring status_;  // Shown in the footer of a top list
     int hot_ = -1;
     bool activated_ = false;
 

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "core/gpu.h"
+
 #include <windows.h>
 
 #include <cstdint>
@@ -36,6 +38,7 @@ struct Snapshot {
     uint64_t diskRead = 0;
     uint64_t diskWrite = 0;
     BatteryInfo battery;
+    GpuInfo gpu;  // Only read while something shows the GPU
 
     int MemoryPercent() const;
     int DiskPercent() const;
@@ -67,7 +70,8 @@ inline constexpr uint32_t kMemory = 2;
 inline constexpr uint32_t kDisk = 4;
 inline constexpr uint32_t kNetwork = 8;
 inline constexpr uint32_t kBattery = 16;
-inline constexpr uint32_t kAll = kCpu | kMemory | kDisk | kNetwork | kBattery;
+inline constexpr uint32_t kGpu = 32;
+inline constexpr uint32_t kAll = kCpu | kMemory | kDisk | kNetwork | kBattery | kGpu;
 }  // namespace metric
 
 // The two short lines of the floating widget and the taskbar view, e.g.

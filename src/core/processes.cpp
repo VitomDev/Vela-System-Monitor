@@ -14,6 +14,7 @@ std::vector<ProcessUsage> TopProcesses(std::vector<ProcessUsage> processes, Proc
             case ProcessMetric::Cpu: return p.cpuPercent;
             case ProcessMetric::Memory: return static_cast<double>(p.memory);
             case ProcessMetric::Io: return static_cast<double>(p.ioRate);
+            case ProcessMetric::Gpu: return p.gpuPercent;
         }
         return 0.0;
     };
@@ -35,7 +36,9 @@ std::vector<ProcessUsage> ProcessUsageCalculator::Update(const std::vector<Proce
         ProcessUsage& group = groups[key];
         if (group.name.empty()) group.name = process.name;
         ++group.count;
+        group.pids.push_back(process.pid);
         group.memory += process.memory;
+        group.gpuPercent += process.gpuPercent;
 
         // Only a process seen last time, and not a new one reusing its id, has a rate.
         const auto found = previous_.find(process.pid);
@@ -54,6 +57,7 @@ std::vector<ProcessUsage> ProcessUsageCalculator::Update(const std::vector<Proce
     usage.reserve(groups.size());
     for (auto& [key, group] : groups) {
         group.cpuPercent = std::min(group.cpuPercent, 100.0);
+        group.gpuPercent = std::min(group.gpuPercent, 100.0);
         usage.push_back(std::move(group));
     }
     return usage;
@@ -155,11 +159,18 @@ std::vector<ProcessCounters> ReadCounters() {
 
 }  // namespace
 
-std::vector<ProcessUsage> ProcessSampler::Sample() {
+std::vector<ProcessUsage> ProcessSampler::Sample(const std::unordered_map<uint32_t, double>* gpu) {
     const uint64_t now = GetTickCount64();
     const uint64_t elapsed = lastTick_ ? now - lastTick_ : 0;
     lastTick_ = now;
-    return calculator_.Update(ReadCounters(), elapsed, GetActiveProcessorCount(ALL_PROCESSOR_GROUPS));
+    std::vector<ProcessCounters> counters = ReadCounters();
+    if (gpu) {
+        for (ProcessCounters& process : counters) {
+            const auto found = gpu->find(process.pid);
+            if (found != gpu->end()) process.gpuPercent = found->second;
+        }
+    }
+    return calculator_.Update(counters, elapsed, GetActiveProcessorCount(ALL_PROCESSOR_GROUPS));
 }
 
 void ProcessSampler::Reset() {

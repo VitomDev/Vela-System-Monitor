@@ -155,12 +155,13 @@ void TrayApp::ShowTrayMenu(POINT point) {
     }
 }
 
-void TrayApp::Notify(const std::wstring& message) {
+void TrayApp::Notify(const std::wstring& message, bool warning) {
+    if (!warning) alertView_ = PanelView::Overview;
     NOTIFYICONDATAW data{sizeof(data)};
     data.hWnd = window_;
     data.uID = icon_.uID;
     data.uFlags = NIF_INFO;
-    data.dwInfoFlags = NIIF_INFO | NIIF_RESPECT_QUIET_TIME;
+    data.dwInfoFlags = (warning ? NIIF_WARNING : NIIF_INFO) | NIIF_RESPECT_QUIET_TIME;
     wcscpy_s(data.szInfoTitle, L"Vela System Monitor");
     wcsncpy_s(data.szInfo, message.c_str(), _TRUNCATE);
     Shell_NotifyIconW(NIM_MODIFY, &data);
@@ -175,7 +176,7 @@ void TrayApp::TogglePanel() {
     }
 }
 
-void TrayApp::ShowPanel() {
+void TrayApp::ShowPanel(PanelView view) {
     if (exiting_) return;
     if (panel_.IsOpen()) {
         SetForegroundWindow(panel_.window());
@@ -188,10 +189,10 @@ void TrayApp::ShowPanel() {
         GetCursorPos(&cursor);
         anchor = {cursor.x, cursor.y, cursor.x + 1, cursor.y + 1};
     }
-    snapshot_ = sampler_.Sample();
-    panel_.Show(instance_, anchor, snapshot_, settings_.panelMetrics);
+    ReadSnapshot(true);
+    panel_.Show(instance_, anchor, snapshot_, settings_.panelMetrics, &history_, view);
     // The first reading, so the top lists are ready a second later.
-    if (panel_.IsOpen()) processSampler_.Sample();
+    if (panel_.IsOpen()) processSampler_.Sample(gpuSampler_.IsOpen() ? &gpuByProcess_ : nullptr);
     RestartTimer();
 }
 
@@ -205,8 +206,37 @@ void TrayApp::RestartTimer() {
     SetCoalescableTimer(window_, kSampleTimer, interval, nullptr, interval / 4);
 }
 
-void TrayApp::Sample() {
+bool TrayApp::NeedsGpu(bool panelOpen) const {
+    if (!HasGpu()) return false;
+    if (settings_.alerts) return true;
+    if (panelOpen && (settings_.panelMetrics & metric::kGpu)) return true;
+    return (settings_.floating || settings_.taskbar) && (settings_.miniMetrics & metric::kGpu);
+}
+
+void TrayApp::ReadSnapshot(bool panelOpen) {
     snapshot_ = sampler_.Sample();
+    if (NeedsGpu(panelOpen)) {
+        snapshot_.gpu = gpuSampler_.Sample(panelOpen ? &gpuByProcess_ : nullptr);
+    } else if (gpuSampler_.IsOpen()) {
+        gpuSampler_.Close();
+        gpuByProcess_ = {};
+    }
+    if (!panelOpen) gpuByProcess_ = {};
+    history_.Push(snapshot_);
+}
+
+void TrayApp::CheckAlerts() {
+    if (!settings_.alerts) return;
+    const uint32_t metric = alerts_.Update(snapshot_, GetTickCount64());
+    if (!metric) return;
+    const wchar_t* name = metric == metric::kCpu ? L"CPU" : metric == metric::kGpu ? L"GPU" : L"Memory";
+    alertView_ = metric == metric::kCpu ? PanelView::Cpu : metric == metric::kGpu ? PanelView::Gpu : PanelView::Memory;
+    Notify(std::wstring(name) + L" has been at 90% or more for a while. Click to see what is using it.", true);
+}
+
+void TrayApp::Sample() {
+    ReadSnapshot(panel_.IsOpen());
+    CheckAlerts();
     UpdateTrayIcon(false);
     std::wstring tooltip = TooltipText(snapshot_);
     if (tooltip != tooltip_) {
@@ -219,7 +249,7 @@ void TrayApp::Sample() {
         Shell_NotifyIconW(NIM_MODIFY, &data);
     }
     // Processes are only read while the panel is open.
-    if (panel_.IsOpen()) panel_.Update(snapshot_, processSampler_.Sample());
+    if (panel_.IsOpen()) panel_.Update(snapshot_, processSampler_.Sample(gpuSampler_.IsOpen() ? &gpuByProcess_ : nullptr));
     if (floating_.IsOpen() || taskbarView_.IsOpen()) {
         const MiniLines lines = MiniText(snapshot_, MiniMetrics());
         const MiniLines widest = WidestMiniText(MiniMetrics());
@@ -232,6 +262,7 @@ uint32_t TrayApp::MiniMetrics() const {
     // No room is kept for a battery this PC does not have.
     uint32_t metrics = settings_.miniMetrics;
     if (!snapshot_.battery.present) metrics &= ~metric::kBattery;
+    if (!HasGpu()) metrics &= ~metric::kGpu;
     return metrics ? metrics : metric::kCpu;
 }
 
@@ -326,6 +357,9 @@ LRESULT TrayApp::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
                 case NIN_SELECT:
                 case NIN_KEYSELECT:
                     TogglePanel();
+                    break;
+                case NIN_BALLOONUSERCLICK:
+                    ShowPanel(alertView_);
                     break;
                 case WM_CONTEXTMENU:
                     ShowTrayMenu({GET_X_LPARAM(wParam), GET_Y_LPARAM(wParam)});

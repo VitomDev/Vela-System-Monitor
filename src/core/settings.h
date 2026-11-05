@@ -32,6 +32,8 @@ struct Settings {
     // What the panel and the mini views show (metric:: bits, never none).
     uint32_t panelMetrics = metric::kAll;
     uint32_t miniMetrics = metric::kCpu | metric::kMemory | metric::kNetwork;
+    // A notification when CPU, GPU or memory stay high.
+    bool alerts = false;
     // The always-on-top mini widget and the view on the taskbar.
     bool floating = false;
     bool taskbar = false;

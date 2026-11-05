@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 Keep an eye on your PC without opening Task Manager. 👀  
-CPU and memory live in the tray icon, a tooltip sums up everything, and one click opens a small panel with CPU, memory, disk, network and battery. Want the numbers always in sight? Turn on the floating widget or show them right on the taskbar.
+CPU and memory live in the tray icon, a tooltip sums up everything, and one click opens a small panel with CPU, GPU, memory, disk, network and battery. Want the numbers always in sight? Turn on the floating widget or show them right on the taskbar.
 
 Vela lives in the notification area and is built to stay out of the way: a monitor that eats your resources would defeat its own purpose. 🪶
 
@@ -15,11 +15,15 @@ Vela lives in the notification area and is built to stay out of the way: a monit
 - 📈 **Tray icon**: the Vela logo, or the live CPU or memory percent as a number
 - 💬 **Tooltip**: hover the icon for CPU, RAM, disk, network speed and battery at a glance
 - 🪟 **Panel**: click the icon for a Windows 11–style flyout with every metric and its level bar
-- 🔎 **Top processes**: click CPU, Memory or Disk in the panel to see the 10 apps using the most of it, updated every second
+- 📉 **History graphs**: CPU, GPU, memory and network draw their recent past right in the panel
+- 🔎 **Top processes**: click CPU, GPU, Memory or Disk in the panel to see the 10 apps using the most of it, updated every second
+- 🛑 **End a process or find its file**: right-click it in a top list
+- 🚨 **High usage warnings** (optional): a notification when CPU, GPU or memory stay at 90% or more; click it to see what is using it
 - 📌 **Floating widget**: a tiny always-on-top box with CPU, RAM and network speed. Drag it anywhere, it remembers where
 - 🧷 **On the taskbar**: the same numbers blended into your taskbar, next to the clock, at the left or anywhere you drag them
 - 🎛️ **Show only what you care about**: pick which metrics appear in the panel, and which on the taskbar and floating widget
 - 🧠 **CPU**: total usage, logical processors and uptime
+- 🎮 **GPU**: usage, as Task Manager measures it, and video memory
 - 🧮 **Memory**: used and total RAM
 - 💽 **Disk**: space used on the system drive plus live read and write speed
 - 🌐 **Network**: download and upload speed of your physical adapters (Wi-Fi, Ethernet)
@@ -56,7 +60,8 @@ Uninstalling (Settings → Apps) removes Vela, its startup entry and its setting
 | Quick look | Hover the tray icon |
 | Open the panel | Left-click the tray icon |
 | Close the panel | Click anywhere else, or `Esc` |
-| Top 10 processes | Click **CPU**, **Memory** or **Disk** in the panel; click the title, `Esc` or `Backspace` to go back |
+| Top 10 processes | Click **CPU**, **GPU**, **Memory** or **Disk** in the panel; click the title, `Esc` or `Backspace` to go back |
+| End a process or open its folder | Right-click it in a top list |
 | Floating widget | Right-click the tray icon → **Floating widget**. Drag to move, double-click for the panel, right-click for the menu |
 | Numbers on the taskbar | Right-click the tray icon → **Show on taskbar**. Click them for the panel, drag them along the taskbar to move them, right-click for the menu |
 | Settings | ⚙️ in the panel, or right-click the tray icon → **Settings** |
@@ -66,17 +71,18 @@ Uninstalling (Settings → Apps) removes Vela, its startup entry and its setting
 ### ⚙️ Settings
 
 - **Tray icon shows**: Vela logo, CPU % or memory %
-- **What to show**: CPU, memory, disk, network and battery, chosen separately for the panel and for the taskbar and floating widget
+- **What to show**: CPU, GPU, memory, disk, network and battery, chosen separately for the panel and for the taskbar and floating widget
 - **Floating widget** above other windows, on or off
 - **Show on the taskbar**, on or off, and its **position**: next to the clock or at the left (dragging it there works too)
 - **Update**: every 1, 2 (default) or 5 seconds. The panel always updates every second while it is open
 - **Start with Windows**
+- **Warn when CPU, GPU or memory stay at 90%**: off by default. A warning comes after 30 seconds at 90% or more, and the same one only comes back once usage has dropped and 10 minutes have passed
 
 ---
 
 ## ⚡ Performance
 
-Vela reads the system counters every 2 seconds and only redraws the tray icon or a panel row when what you would see actually changes. The panel only exists while it is open, and processes are only read while it is open: one system call per second for all of them, with no handle opened to any process.
+Vela reads the system counters every 2 seconds and only redraws the tray icon or a panel row when what you would see actually changes. The panel only exists while it is open, and processes are only read while it is open: one system call per second for all of them, with no handle opened to any process. The GPU is read from the same counters Task Manager uses, which cost more, so only while the panel, the taskbar, the widget or the warnings need it.
 
 Measured on the development PC (Windows 11, default settings, panel closed, over 60 s):
 
@@ -84,6 +90,7 @@ Measured on the development PC (Windows 11, default settings, panel closed, over
 | --- | --- |
 | Tray only | 16 ms CPU (~0.03%), 1.3–1.8 MB working set |
 | With floating widget and taskbar view | 31 ms CPU (~0.05%), 2.5 MB working set |
+| Taskbar view showing the GPU | 94 ms CPU (~0.16%), 9.9 MB working set |
 | `Vela.exe` / installer | 0.24 MB / 2.1 MB |
 
 ---
@@ -104,7 +111,7 @@ It downloads the pinned build tools into `.deps/` (Windows SDK, CMake and Ninja,
 
 ## 📚 Dependencies
 
-None: Vela only uses Windows' own APIs (`GetSystemTimes`, `GlobalMemoryStatusEx`, `GetIfEntry2`, `GetSystemPowerStatus`, disk performance counters). 🧘
+None: Vela only uses Windows' own APIs (`GetSystemTimes`, `GlobalMemoryStatusEx`, `GetIfEntry2`, `GetSystemPowerStatus`, disk performance counters, and the GPU counters through PDH and DXGI). 🧘
 
 ---
 

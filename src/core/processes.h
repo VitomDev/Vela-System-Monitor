@@ -15,9 +15,11 @@ struct ProcessUsage {
     double cpuPercent = 0;  // Share of the whole CPU, 0-100
     uint64_t memory = 0;    // Private working set, as Task Manager shows
     uint64_t ioRate = 0;    // File and device reads plus writes, bytes per second
+    double gpuPercent = 0;  // Busiest GPU engine, 0-100
+    std::vector<uint32_t> pids;
 };
 
-enum class ProcessMetric { Cpu, Memory, Io };
+enum class ProcessMetric { Cpu, Memory, Io, Gpu };
 
 // The `count` largest by `metric`, largest first; ties keep name order.
 std::vector<ProcessUsage> TopProcesses(std::vector<ProcessUsage> processes, ProcessMetric metric, size_t count);
@@ -30,6 +32,7 @@ struct ProcessCounters {
     uint64_t cpuTime = 0;  // Kernel plus user, 100 ns units
     uint64_t memory = 0;
     uint64_t ioBytes = 0;
+    double gpuPercent = 0;
 };
 
 // Turns two readings into grouped usage. Kept apart from the system call so
@@ -53,7 +56,8 @@ private:
 // Only used while the panel is open.
 class ProcessSampler {
 public:
-    std::vector<ProcessUsage> Sample();
+    // `gpu` is each process's GPU share by id, when the GPU is read.
+    std::vector<ProcessUsage> Sample(const std::unordered_map<uint32_t, double>* gpu = nullptr);
     void Reset();
 
 private:

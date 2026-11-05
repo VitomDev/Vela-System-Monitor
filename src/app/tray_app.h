@@ -3,6 +3,9 @@
 #include "app/mini_views.h"
 #include "app/panel.h"
 #include "app/tray_icon.h"
+#include "core/alerts.h"
+#include "core/gpu.h"
+#include "core/history.h"
 #include "core/sampler.h"
 #include "core/settings.h"
 
@@ -10,6 +13,7 @@
 #include <shellapi.h>
 
 #include <string>
+#include <unordered_map>
 
 namespace vela {
 
@@ -29,12 +33,17 @@ private:
 
     void AddTrayIcon();
     void ShowTrayMenu(POINT point);
-    void Notify(const std::wstring& message);
+    // A warning opens the top list it is about when clicked.
+    void Notify(const std::wstring& message, bool warning = false);
     void TogglePanel();
-    void ShowPanel();
+    void ShowPanel(PanelView view = PanelView::Overview);
 
     // Reads the counters and updates only what changed.
     void Sample();
+    // The system counters, plus the GPU only while something shows it.
+    void ReadSnapshot(bool panelOpen);
+    bool NeedsGpu(bool panelOpen) const;
+    void CheckAlerts();
     void UpdateTrayIcon(bool force);
     void RestartTimer();
     // Opens or closes the floating widget and the taskbar view as set.
@@ -56,6 +65,11 @@ private:
     bool exiting_ = false;
 
     Sampler sampler_;
+    GpuSampler gpuSampler_;
+    std::unordered_map<uint32_t, double> gpuByProcess_;
+    History history_;
+    UsageAlerts alerts_;
+    PanelView alertView_ = PanelView::Overview;  // What a click on the last warning opens
     ProcessSampler processSampler_;
     Snapshot snapshot_;
     TrayIconState iconState_;

@@ -83,7 +83,9 @@ std::wstring FormatDuration(long long seconds) {
 std::wstring FormatPercent(double percent) { return std::to_wstring(std::lround(percent)) + L"%"; }
 
 std::wstring TooltipText(const Snapshot& s) {
-    std::wstring text = L"CPU " + FormatPercent(s.cpuPercent) + L" \u00B7 RAM " + std::to_wstring(s.MemoryPercent()) + L"%";
+    std::wstring text = L"CPU " + FormatPercent(s.cpuPercent);
+    if (s.gpu.present) text += L" \u00B7 GPU " + FormatPercent(s.gpu.percent);
+    text += L" \u00B7 RAM " + std::to_wstring(s.MemoryPercent()) + L"%";
     text += L"\nDisk " + std::wstring(1, s.diskLetter) + L": " + std::to_wstring(s.DiskPercent()) + L"%";
     text += L"\n\u2193 " + FormatRate(s.networkDown) + L"  \u2191 " + FormatRate(s.networkUp);
     if (s.battery.present) {
@@ -103,6 +105,7 @@ std::wstring TooltipText(const Snapshot& s) {
 MiniLines MiniText(const Snapshot& s, uint32_t metrics) {
     std::vector<std::wstring> items;
     if (metrics & metric::kCpu) items.push_back(L"CPU " + FormatPercent(s.cpuPercent));
+    if ((metrics & metric::kGpu) && s.gpu.present) items.push_back(L"GPU " + FormatPercent(s.gpu.percent));
     if (metrics & metric::kMemory) items.push_back(L"RAM " + std::to_wstring(s.MemoryPercent()) + L"%");
     if (metrics & metric::kDisk) {
         items.push_back(s.diskRatesKnown ? L"Disk " + FormatRate(s.diskRead + s.diskWrite)
@@ -130,6 +133,7 @@ MiniLines WidestMiniText(uint32_t metrics) {
     widest.diskRead = 888ull << 20;
     widest.networkDown = widest.networkUp = 888ull << 20;
     widest.battery = {true, 100, false, false, -1};
+    widest.gpu = {true, true, 100, 0, 0};
     return MiniText(widest, metrics);
 }
 

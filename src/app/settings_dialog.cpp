@@ -23,6 +23,7 @@ enum ControlId {
     kTaskbarToggle,
     kTaskbarSpotButton,
     kAutostartToggle,
+    kAlertsToggle,
     kCancel = IDCANCEL,
     kSave = IDOK,
     // One chip per metric, in kChips order.
@@ -35,6 +36,7 @@ struct Chip {
     const wchar_t* label;
 };
 constexpr Chip kChips[] = {{metric::kCpu, L"CPU"},
+                           {metric::kGpu, L"GPU"},
                            {metric::kMemory, L"Memory"},
                            {metric::kDisk, L"Disk"},
                            {metric::kNetwork, L"Network"},
@@ -42,7 +44,7 @@ constexpr Chip kChips[] = {{metric::kCpu, L"CPU"},
 constexpr int kChipCount = static_cast<int>(std::size(kChips));
 
 // Layout in 96-DPI pixels.
-constexpr int kWidth = 460;
+constexpr int kWidth = 500;
 constexpr int kPadding = 24;
 constexpr int kRowHeight = 36;
 constexpr int kFieldWidth = 200;
@@ -144,7 +146,7 @@ void Layout(State& state) {
     const auto chipRow = [&](int y, int firstId) {
         int x = padding;
         for (int i = 0; i < kChipCount; ++i) {
-            const int chipWidth = TextWidth(window, state.textFont, kChips[i].label) + scale(28);
+            const int chipWidth = TextWidth(window, state.textFont, kChips[i].label) + scale(24);
             place(firstId + i, x, y, chipWidth, scale(30));
             x += chipWidth + scale(8);
         }
@@ -174,6 +176,8 @@ void Layout(State& state) {
     text(padding, y, width - 2 * padding, scale(24), L"General", TextStyle::Caption);
     y += scale(24);
     labelRow(y, L"Start with Windows", kAutostartToggle, scale(44), scale(20));
+    y += row;
+    labelRow(y, L"Warn when CPU, GPU or memory stay at 90%", kAlertsToggle, scale(44), scale(20));
     y += row + scale(12);
 
     state.statusRect = {padding, y, width - padding, y + scale(20)};
@@ -332,6 +336,7 @@ void DrawControl(State& state, const DRAWITEMSTRUCT& item) {
         case kTaskbarToggle: DrawToggle(state, item, state.settings.taskbar); break;
         case kTaskbarSpotButton: DrawChoice(state, item, TaskbarSpotName(state.settings.taskbarSpot)); break;
         case kAutostartToggle: DrawToggle(state, item, state.autostart); break;
+        case kAlertsToggle: DrawToggle(state, item, state.settings.alerts); break;
         case kSave: DrawButton(item, state.theme, fonts, ButtonStyle::Primary, nullptr, L"Save", radius); break;
         case kCancel: DrawButton(item, state.theme, fonts, ButtonStyle::Standard, nullptr, L"Cancel", radius); break;
     }
@@ -431,10 +436,12 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
                 case kTaskbarSpotButton: ChooseTaskbarSpot(*state); break;
                 case kFloatingToggle:
                 case kTaskbarToggle:
-                case kAutostartToggle: {
+                case kAutostartToggle:
+                case kAlertsToggle: {
                     const int id = LOWORD(wParam);
                     bool& option = id == kFloatingToggle ? state->settings.floating
                                    : id == kTaskbarToggle ? state->settings.taskbar
+                                   : id == kAlertsToggle  ? state->settings.alerts
                                                           : state->autostart;
                     option = !option;
                     InvalidateRect(GetDlgItem(window, id), nullptr, FALSE);
@@ -507,7 +514,7 @@ void ShowSettingsDialog(HINSTANCE instance, HWND owner, const Settings& current,
     std::vector<int> ids{kTrayIconButton, kIntervalButton};
     for (int i = 0; i < kChipCount; ++i) ids.push_back(kPanelChipFirst + i);
     for (int i = 0; i < kChipCount; ++i) ids.push_back(kMiniChipFirst + i);
-    ids.insert(ids.end(), {kFloatingToggle, kTaskbarToggle, kTaskbarSpotButton, kAutostartToggle, kCancel, kSave});
+    ids.insert(ids.end(), {kFloatingToggle, kTaskbarToggle, kTaskbarSpotButton, kAutostartToggle, kAlertsToggle, kCancel, kSave});
     for (int id : ids) {
         HWND control = CreateWindowExW(0, L"BUTTON", L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW, 0, 0, 0, 0,
                                        window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)), instance, nullptr);

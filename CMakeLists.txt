@@ -19,9 +19,12 @@ add_library(velacore STATIC
     src/core/sampler.cpp
     src/core/settings.cpp
     src/core/taskbar_place.cpp
+    src/core/gpu.cpp
+    src/core/history.cpp
+    src/core/alerts.cpp
 )
 target_include_directories(velacore PUBLIC src)
-target_link_libraries(velacore PUBLIC user32 advapi32 iphlpapi)
+target_link_libraries(velacore PUBLIC user32 advapi32 iphlpapi pdh dxgi)
 
 add_executable(Vela WIN32
     src/app/main.cpp

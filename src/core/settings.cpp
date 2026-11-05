@@ -40,8 +40,14 @@ Settings Settings::Load(const wchar_t* keyPath) {
             if (value == interval) settings.intervalSeconds = value;
         }
     }
-    if (ReadDword(key, L"PanelMetrics", value) && (value & metric::kAll)) settings.panelMetrics = value & metric::kAll;
+    if (ReadDword(key, L"PanelMetrics", value) && (value & metric::kAll)) {
+        // Metrics added after this choice was saved start shown.
+        DWORD known = metric::kAll & ~metric::kGpu;
+        ReadDword(key, L"KnownMetrics", known);
+        settings.panelMetrics = (value | (metric::kAll & ~known)) & metric::kAll;
+    }
     if (ReadDword(key, L"MiniMetrics", value) && (value & metric::kAll)) settings.miniMetrics = value & metric::kAll;
+    if (ReadDword(key, L"Alerts", value)) settings.alerts = value != 0;
     if (ReadDword(key, L"Floating", value)) settings.floating = value != 0;
     if (ReadDword(key, L"Taskbar", value)) settings.taskbar = value != 0;
     if (ReadDword(key, L"TaskbarSpot", value) && value <= static_cast<DWORD>(TaskbarSpot::Custom)) {
@@ -63,6 +69,7 @@ bool Settings::Save(const wchar_t* keyPath) const {
     }
     bool saved = WriteDword(key, L"TrayIcon", static_cast<DWORD>(trayIcon)) && WriteDword(key, L"Interval", intervalSeconds) &&
                  WriteDword(key, L"PanelMetrics", panelMetrics) && WriteDword(key, L"MiniMetrics", miniMetrics) &&
+                 WriteDword(key, L"KnownMetrics", metric::kAll) && WriteDword(key, L"Alerts", alerts ? 1 : 0) &&
                  WriteDword(key, L"Floating", floating ? 1 : 0) && WriteDword(key, L"Taskbar", taskbar ? 1 : 0) &&
                  WriteDword(key, L"TaskbarSpot", static_cast<DWORD>(taskbarSpot)) &&
                  WriteDword(key, L"TaskbarOffset", static_cast<DWORD>(std::max(taskbarOffset, 0)));
