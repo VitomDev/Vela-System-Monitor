@@ -8,6 +8,8 @@ CPU and memory live in the tray icon, a tooltip sums up everything, and one clic
 
 Vela lives in the notification area and is built to stay out of the way: a monitor that eats your resources would defeat its own purpose. 🪶
 
+<p align="center"><img src="assets/screenshots/screenshot-1.png" width="340" alt="Vela panel"><br><br><img src="assets/screenshots/taskbar.png" width="340" alt="Vela on the taskbar"></p>
+
 ---
 
 ## 🚀 Features
