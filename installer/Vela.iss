@@ -6,7 +6,7 @@
 ;
 ; Built by build.ps1, which passes /DBuildDir=<folder with Vela.exe>.
 
-#define AppVersion "1.5.1"
+#define AppVersion "1.5.2"
 #define AppName "Vela System Monitor"
 #define RunKey "Software\Microsoft\Windows\CurrentVersion\Run"
 #define StartupApprovedKey "Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run"

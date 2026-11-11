@@ -39,6 +39,8 @@ struct Settings {
     // The always-on-top mini widget and the view on the taskbar.
     bool floating = false;
     bool taskbar = false;
+    // Screens with the taskbar view: bit 0 is the main one, then left to right.
+    uint32_t taskbarScreens = 1;
     // Where the taskbar view sits; `taskbarOffset` is the left edge in
     // 96-DPI pixels from the taskbar's left, used when it was dropped elsewhere.
     TaskbarSpot taskbarSpot = TaskbarSpot::Clock;

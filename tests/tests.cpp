@@ -440,6 +440,7 @@ TEST(SettingsPersist) {
     CHECK(!settings.alerts && settings.graphs);
     settings.alerts = true;
     settings.graphs = false;
+    settings.taskbarScreens = 0b110;
     CHECK(settings.Save(kTestSettingsKey));
     const Settings loaded = Settings::Load(kTestSettingsKey);
     CHECK(loaded.trayIcon == TrayIcon::MemoryPercent && loaded.intervalSeconds == 5);
@@ -447,7 +448,7 @@ TEST(SettingsPersist) {
     CHECK(loaded.panelMetrics == (metric::kCpu | metric::kBattery) && loaded.miniMetrics == metric::kDisk);
     CHECK(loaded.floatingPosition && loaded.floatingPosition->x == -1500 && loaded.floatingPosition->y == 40);
     CHECK(loaded.taskbarSpot == TaskbarSpot::Custom && loaded.taskbarOffset == 640);
-    CHECK(loaded.alerts && !loaded.graphs);
+    CHECK(loaded.alerts && !loaded.graphs && loaded.taskbarScreens == 0b110);
     RegDeleteTreeW(HKEY_CURRENT_USER, kTestSettingsKey);
 
     // Saved before the GPU existed: the panel shows it, the mini views do not.

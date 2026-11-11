@@ -76,6 +76,7 @@ Uninstalling (Settings → Apps) removes Vela, its startup entry and its setting
 - **What to show**: CPU, GPU, memory, disk, network and battery, chosen separately for the panel and for the taskbar and floating widget
 - **Floating widget** above other windows, on or off
 - **Show on the taskbar**, on or off, and its **position**: next to the clock or at the left (dragging it there works too)
+- **Taskbar on screens**: with more than one screen, choose which taskbars show it (one, several or all)
 - **Update**: every 1, 2 (default) or 5 seconds. The panel always updates every second while it is open
 - **Start with Windows**
 - **History graphs in the panel**: on by default; off shows plain bars

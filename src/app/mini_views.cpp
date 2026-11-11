@@ -216,7 +216,25 @@ LRESULT FloatingWidget::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam
 
 // --- Taskbar view ------------------------------------------------------------------
 
-bool TaskbarView::Show(HINSTANCE instance, const MiniLines& lines, const MiniLines& widest, TaskbarSpot spot, int offset) {
+std::vector<HWND> FindTaskbars() {
+    std::vector<HWND> taskbars;
+    if (HWND main = FindWindowW(L"Shell_TrayWnd", nullptr)) taskbars.push_back(main);
+    std::vector<HWND> others;
+    for (HWND other = nullptr; (other = FindWindowExW(nullptr, other, L"Shell_SecondaryTrayWnd", nullptr));) {
+        others.push_back(other);
+    }
+    std::sort(others.begin(), others.end(), [](HWND a, HWND b) {
+        RECT ra, rb;
+        GetWindowRect(a, &ra);
+        GetWindowRect(b, &rb);
+        return ra.left != rb.left ? ra.left < rb.left : ra.top < rb.top;
+    });
+    taskbars.insert(taskbars.end(), others.begin(), others.end());
+    return taskbars;
+}
+
+bool TaskbarView::Show(HINSTANCE instance, HWND taskbar, const MiniLines& lines, const MiniLines& widest, TaskbarSpot spot,
+                       int offset) {
     spot_ = spot;
     offset_ = offset;
     if (window_) {
@@ -226,7 +244,7 @@ bool TaskbarView::Show(HINSTANCE instance, const MiniLines& lines, const MiniLin
     widest_ = widest;
     dpi_ = 0;
     static const ATOM windowClass = RegisterClassOnce(instance, kTaskbarClass, WindowProc);
-    taskbar_ = FindWindowW(L"Shell_TrayWnd", nullptr);
+    taskbar_ = taskbar;
     if (!windowClass || !taskbar_) return false;
     lines_ = lines;
     window_ = CreateWindowExW(WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE, kTaskbarClass, L"Vela", WS_POPUP, 0, 0, 1,
@@ -256,10 +274,18 @@ bool TaskbarView::IsHorizontal() const {
     return taskbar.right - taskbar.left >= taskbar.bottom - taskbar.top;
 }
 
-TaskbarRoom TaskbarView::Room(const RECT& taskbar, UINT dpi) const {
+RECT TaskbarView::NotifyRect(const RECT& taskbar, UINT dpi) const {
     RECT notify;
     HWND notifyWindow = FindWindowExW(taskbar_, nullptr, L"TrayNotifyWnd", nullptr);
-    if (!notifyWindow || !GetWindowRect(notifyWindow, &notify)) notify = {taskbar.right, taskbar.top, taskbar.right, taskbar.bottom};
+    if (notifyWindow && GetWindowRect(notifyWindow, &notify)) return notify;
+    // Las barras secundarias no tienen esa ventana; el reloj ocupa la esquina.
+    const bool horizontal = taskbar.right - taskbar.left >= taskbar.bottom - taskbar.top;
+    if (horizontal) return {taskbar.right - Scale(dpi, 104), taskbar.top, taskbar.right, taskbar.bottom};
+    return {taskbar.left, taskbar.bottom - Scale(dpi, 64), taskbar.right, taskbar.bottom};
+}
+
+TaskbarRoom TaskbarView::Room(const RECT& taskbar, UINT dpi) const {
+    const RECT notify = NotifyRect(taskbar, dpi);
     const int end = notify.left - taskbar.left - Scale(dpi, 4);
     return {std::min(LeftReserved(dpi), end), end};
 }
@@ -267,12 +293,10 @@ TaskbarRoom TaskbarView::Room(const RECT& taskbar, UINT dpi) const {
 void TaskbarView::Place() {
     // While dragged, the mouse decides.
     if (pressed_ && dragging_) return;
-    RECT taskbar, notify;
+    RECT taskbar;
     GetWindowRect(taskbar_, &taskbar);
-    HWND notifyWindow = FindWindowExW(taskbar_, nullptr, L"TrayNotifyWnd", nullptr);
-    if (!notifyWindow || !GetWindowRect(notifyWindow, &notify)) notify = {taskbar.right, taskbar.top, taskbar.right, taskbar.bottom};
-
     const UINT dpi = GetDpiForWindow(taskbar_);
+    const RECT notify = NotifyRect(taskbar, dpi);
     if (dpi != dpi_) {
         // Measured once per DPI: this runs on every update.
         HFONT font = CreateUiFont(dpi, 9);

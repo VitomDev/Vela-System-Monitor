@@ -51,6 +51,7 @@ Settings Settings::Load(const wchar_t* keyPath) {
     if (ReadDword(key, L"Graphs", value)) settings.graphs = value != 0;
     if (ReadDword(key, L"Floating", value)) settings.floating = value != 0;
     if (ReadDword(key, L"Taskbar", value)) settings.taskbar = value != 0;
+    if (ReadDword(key, L"TaskbarScreens", value) && value) settings.taskbarScreens = value;
     if (ReadDword(key, L"TaskbarSpot", value) && value <= static_cast<DWORD>(TaskbarSpot::Custom)) {
         settings.taskbarSpot = static_cast<TaskbarSpot>(value);
     }
@@ -73,6 +74,7 @@ bool Settings::Save(const wchar_t* keyPath) const {
                  WriteDword(key, L"KnownMetrics", metric::kAll) && WriteDword(key, L"Alerts", alerts ? 1 : 0) &&
                  WriteDword(key, L"Graphs", graphs ? 1 : 0) &&
                  WriteDword(key, L"Floating", floating ? 1 : 0) && WriteDword(key, L"Taskbar", taskbar ? 1 : 0) &&
+                 WriteDword(key, L"TaskbarScreens", taskbarScreens) &&
                  WriteDword(key, L"TaskbarSpot", static_cast<DWORD>(taskbarSpot)) &&
                  WriteDword(key, L"TaskbarOffset", static_cast<DWORD>(std::max(taskbarOffset, 0)));
     if (saved && floatingPosition) {

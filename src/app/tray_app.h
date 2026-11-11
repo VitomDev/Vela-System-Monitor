@@ -13,6 +13,8 @@
 #include <shellapi.h>
 
 #include <string>
+#include <vector>
+#include <memory>
 #include <unordered_map>
 
 namespace vela {
@@ -77,7 +79,9 @@ private:
     std::wstring tooltip_;
     Panel panel_;
     FloatingWidget floating_;
-    TaskbarView taskbarView_;
+    // One per chosen screen.
+    std::vector<std::unique_ptr<TaskbarView>> taskbarViews_;
+    void CloseTaskbarViews();
 };
 
 }  // namespace vela

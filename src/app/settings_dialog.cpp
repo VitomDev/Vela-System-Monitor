@@ -1,6 +1,7 @@
 #include "app/settings_dialog.h"
 
 #include "app/resource.h"
+#include "app/mini_views.h"
 #include "app/theme.h"
 #include "version.h"
 
@@ -30,7 +31,9 @@ enum ControlId {
     // One chip per metric, in kChips order.
     kPanelChipFirst = 200,
     kMiniChipFirst = 220,
+    kScreenChipFirst = 240,
 };
+constexpr int kMaxScreens = 8;
 
 struct Chip {
     uint32_t metric;
@@ -61,11 +64,14 @@ struct TextItem {
     TextStyle style;
 };
 
+std::wstring ScreenLabel(int index) { return L"Screen " + std::to_wstring(index + 1); }
+
 struct State {
     HWND window = nullptr;
     Settings settings;
     ApplySettings apply;
     bool autostart = false;
+    int screens = 1;
     std::wstring status;
     bool done = false;
 
@@ -174,6 +180,17 @@ void Layout(State& state) {
     y += row;
     labelRow(y, L"Position on the taskbar", kTaskbarSpotButton, fieldWidth, fieldHeight);
     y += row;
+    if (state.screens > 1) {
+        text(padding, y, width - 2 * padding, scale(28), L"Taskbar on screens", TextStyle::Label);
+        y += scale(28);
+        int x = padding;
+        for (int i = 0; i < state.screens; ++i) {
+            const int chipWidth = TextWidth(window, state.textFont, ScreenLabel(i).c_str()) + scale(24);
+            place(kScreenChipFirst + i, x, y, chipWidth, scale(30));
+            x += chipWidth + scale(8);
+        }
+        y += scale(30) + scale(6);
+    }
     y += scale(kSectionGap);
 
     text(padding, y, width - 2 * padding, scale(24), L"General", TextStyle::Caption);
@@ -327,6 +344,11 @@ uint32_t* ChipMetrics(State& state, int id, int& index) {
 void DrawControl(State& state, const DRAWITEMSTRUCT& item) {
     const ButtonFonts fonts{state.textFont, state.iconFont};
     const int radius = Scale(state.window, kRadius);
+    const int screen = static_cast<int>(item.CtlID) - kScreenChipFirst;
+    if (screen >= 0 && screen < kMaxScreens) {
+        DrawChip(state, item, ScreenLabel(screen).c_str(), (state.settings.taskbarScreens >> screen) & 1);
+        return;
+    }
     int chip = 0;
     if (const uint32_t* metrics = ChipMetrics(state, static_cast<int>(item.CtlID), chip)) {
         DrawChip(state, item, kChips[chip].label, (*metrics & kChips[chip].metric) != 0);
@@ -419,6 +441,19 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
 
     switch (message) {
         case WM_COMMAND: {
+            const int screen = LOWORD(wParam) - kScreenChipFirst;
+            if (screen >= 0 && screen < kMaxScreens) {
+                const uint32_t toggled = state->settings.taskbarScreens ^ (1u << screen);
+                if (toggled & ((1u << state->screens) - 1)) {
+                    state->settings.taskbarScreens = toggled;
+                    state->status.clear();
+                } else {
+                    state->status = L"Keep at least one screen.";
+                }
+                InvalidateRect(state->window, &state->statusRect, TRUE);
+                InvalidateRect(GetDlgItem(window, LOWORD(wParam)), nullptr, FALSE);
+                return 0;
+            }
             int chip = 0;
             if (uint32_t* metrics = ChipMetrics(*state, LOWORD(wParam), chip)) {
                 const uint32_t toggled = *metrics ^ kChips[chip].metric;
@@ -504,6 +539,9 @@ void ShowSettingsDialog(HINSTANCE instance, HWND owner, const Settings& current,
     state.settings = current;
     state.apply = apply;
     state.autostart = IsAutostartEnabled();
+    state.screens = std::min<int>(static_cast<int>(FindTaskbars().size()), kMaxScreens);
+    // Que siempre quede marcada alguna pantalla que exista.
+    if (state.screens > 1 && !(state.settings.taskbarScreens & ((1u << state.screens) - 1))) state.settings.taskbarScreens |= 1;
 
     // Open on the monitor with the mouse, roughly centered.
     POINT cursor;
@@ -520,6 +558,7 @@ void ShowSettingsDialog(HINSTANCE instance, HWND owner, const Settings& current,
     std::vector<int> ids{kTrayIconButton, kIntervalButton};
     for (int i = 0; i < kChipCount; ++i) ids.push_back(kPanelChipFirst + i);
     for (int i = 0; i < kChipCount; ++i) ids.push_back(kMiniChipFirst + i);
+    for (int i = 0; i < state.screens && state.screens > 1; ++i) ids.push_back(kScreenChipFirst + i);
     ids.insert(ids.end(), {kFloatingToggle, kTaskbarToggle, kTaskbarSpotButton, kAutostartToggle, kAlertsToggle, kGraphsToggle, kCancel, kSave});
     for (int id : ids) {
         HWND control = CreateWindowExW(0, L"BUTTON", L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW, 0, 0, 0, 0,

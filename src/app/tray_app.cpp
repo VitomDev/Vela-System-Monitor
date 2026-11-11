@@ -61,13 +61,8 @@ bool TrayApp::Initialize(HINSTANCE instance, bool startedAtSignIn) {
         settings_.floatingPosition = position;
         settings_.Save();
     };
-    taskbarView_.onPlaced = [this](TaskbarSpot spot, int offset) {
-        settings_.taskbarSpot = spot;
-        settings_.taskbarOffset = offset;
-        settings_.Save();
-    };
-    floating_.onMenu = taskbarView_.onMenu = [this](POINT point) { ShowTrayMenu(point); };
-    floating_.onOpenPanel = taskbarView_.onOpenPanel = [this] { TogglePanel(); };
+    floating_.onMenu = [this](POINT point) { ShowTrayMenu(point); };
+    floating_.onOpenPanel = [this] { TogglePanel(); };
 
     snapshot_ = sampler_.Sample();
     AddTrayIcon();
@@ -250,11 +245,11 @@ void TrayApp::Sample() {
     }
     // Processes are only read while the panel is open.
     if (panel_.IsOpen()) panel_.Update(snapshot_, processSampler_.Sample(gpuSampler_.IsOpen() ? &gpuByProcess_ : nullptr));
-    if (floating_.IsOpen() || taskbarView_.IsOpen()) {
+    if (floating_.IsOpen() || !taskbarViews_.empty()) {
         const MiniLines lines = MiniText(snapshot_, MiniMetrics());
         const MiniLines widest = WidestMiniText(MiniMetrics());
         floating_.Update(lines, widest);
-        taskbarView_.Update(lines, widest);
+        for (auto& view : taskbarViews_) view->Update(lines, widest);
     }
 }
 
@@ -275,11 +270,33 @@ void TrayApp::ApplyMiniViews() {
     } else {
         floating_.Close();
     }
-    if (!settings_.taskbar) {
-        taskbarView_.Close();
-    } else if (!taskbarView_.Show(instance_, lines, widest, settings_.taskbarSpot, settings_.taskbarOffset)) {
-        Notify(L"Vela could not find the taskbar to show its numbers there.");
+    CloseTaskbarViews();
+    if (!settings_.taskbar) return;
+    const std::vector<HWND> taskbars = FindTaskbars();
+    for (size_t i = 0; i < taskbars.size() && i < 32; ++i) {
+        // Si la pantalla elegida ya no está conectada, se usa la principal.
+        const bool chosen = (settings_.taskbarScreens >> i) & 1;
+        const bool fallback = i == 0 && !(settings_.taskbarScreens & ((1ull << taskbars.size()) - 1));
+        if (!chosen && !fallback) continue;
+        auto view = std::make_unique<TaskbarView>();
+        view->onMenu = [this](POINT point) { ShowTrayMenu(point); };
+        view->onOpenPanel = [this] { TogglePanel(); };
+        view->onPlaced = [this](TaskbarSpot spot, int offset) {
+            settings_.taskbarSpot = spot;
+            settings_.taskbarOffset = offset;
+            settings_.Save();
+            for (auto& other : taskbarViews_) other->SetSpot(spot, offset);
+        };
+        if (view->Show(instance_, taskbars[i], lines, widest, settings_.taskbarSpot, settings_.taskbarOffset)) {
+            taskbarViews_.push_back(std::move(view));
+        }
     }
+    if (taskbarViews_.empty()) Notify(L"Vela could not find the taskbar to show its numbers there.");
+}
+
+void TrayApp::CloseTaskbarViews() {
+    for (auto& view : taskbarViews_) view->Close();
+    taskbarViews_.clear();
 }
 
 // --- Settings ----------------------------------------------------------------
@@ -320,7 +337,7 @@ void TrayApp::Exit() {
     panel_.onClosed = nullptr;
     panel_.Close();
     floating_.Close();
-    taskbarView_.Close();
+    CloseTaskbarViews();
     KillTimer(window_, kSampleTimer);
     if (displayNotification_) UnregisterPowerSettingNotification(displayNotification_);
     displayNotification_ = nullptr;
@@ -344,7 +361,6 @@ LRESULT TrayApp::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
     if (message == taskbarCreatedMessage_ && taskbarCreatedMessage_ != 0) {
         // Explorer restarted: a new taskbar, so the taskbar view moves into it.
         AddTrayIcon();
-        taskbarView_.Close();
         ApplyMiniViews();
         return 0;
     }
@@ -391,7 +407,9 @@ LRESULT TrayApp::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
         case WM_DPICHANGED:
             // Light or dark taskbar, or a new icon size.
             UpdateTrayIcon(true);
-            taskbarView_.Redraw();
+            // Una pantalla conectada o quitada cambia las barras de tareas.
+            if (message == WM_DISPLAYCHANGE) ApplyMiniViews();
+            for (auto& view : taskbarViews_) view->Redraw();
             return 0;
         case WM_CLOSE:  // Sent by the installer before upgrading or uninstalling.
         case WM_ENDSESSION:
