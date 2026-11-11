@@ -37,6 +37,8 @@ add_executable(Vela WIN32
     src/app/Vela.rc
 )
 target_link_libraries(Vela PRIVATE velacore gdi32 shell32 comctl32 dwmapi uxtheme)
+# rc.exe does not track its includes, so the version number would stay stale.
+set_source_files_properties(src/app/Vela.rc PROPERTIES OBJECT_DEPENDS "${CMAKE_SOURCE_DIR}/src/version.h;${CMAKE_SOURCE_DIR}/assets/vela.ico")
 # The manifest is embedded through Vela.rc.
 target_link_options(Vela PRIVATE /MANIFEST:NO)
 
