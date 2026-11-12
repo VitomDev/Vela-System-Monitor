@@ -1,4 +1,5 @@
 #include "app/tray_app.h"
+#include "app/vitool_tray.h"
 
 #include "app/resource.h"
 #include "app/settings_dialog.h"
@@ -92,9 +93,9 @@ void TrayApp::AddTrayIcon() {
     icon_.uCallbackMessage = WM_APP_TRAY;
     tooltip_ = TooltipText(snapshot_);
     wcsncpy_s(icon_.szTip, tooltip_.c_str(), _TRUNCATE);
-    Shell_NotifyIconW(NIM_ADD, &icon_);
+    vitool_tray::NotifyIcon(NIM_ADD, &icon_);
     icon_.uVersion = NOTIFYICON_VERSION_4;
-    Shell_NotifyIconW(NIM_SETVERSION, &icon_);
+    vitool_tray::NotifyIcon(NIM_SETVERSION, &icon_);
     UpdateTrayIcon(true);
 }
 
@@ -111,7 +112,7 @@ void TrayApp::UpdateTrayIcon(bool force) {
     data.uID = icon_.uID;
     data.uFlags = NIF_ICON;
     data.hIcon = icon;
-    Shell_NotifyIconW(NIM_MODIFY, &data);
+    vitool_tray::NotifyIcon(NIM_MODIFY, &data);
     if (currentIcon_) DestroyIcon(currentIcon_);
     currentIcon_ = icon;
     icon_.hIcon = icon;
@@ -159,7 +160,7 @@ void TrayApp::Notify(const std::wstring& message, bool warning) {
     data.dwInfoFlags = (warning ? NIIF_WARNING : NIIF_INFO) | NIIF_RESPECT_QUIET_TIME;
     wcscpy_s(data.szInfoTitle, L"Vela System Monitor");
     wcsncpy_s(data.szInfo, message.c_str(), _TRUNCATE);
-    Shell_NotifyIconW(NIM_MODIFY, &data);
+    vitool_tray::NotifyIcon(NIM_MODIFY, &data);
 }
 
 void TrayApp::TogglePanel() {
@@ -241,7 +242,7 @@ void TrayApp::Sample() {
         data.uID = icon_.uID;
         data.uFlags = NIF_TIP | NIF_SHOWTIP;
         wcsncpy_s(data.szTip, tooltip_.c_str(), _TRUNCATE);
-        Shell_NotifyIconW(NIM_MODIFY, &data);
+        vitool_tray::NotifyIcon(NIM_MODIFY, &data);
     }
     // Processes are only read while the panel is open.
     if (panel_.IsOpen()) panel_.Update(snapshot_, processSampler_.Sample(gpuSampler_.IsOpen() ? &gpuByProcess_ : nullptr));
@@ -341,7 +342,7 @@ void TrayApp::Exit() {
     KillTimer(window_, kSampleTimer);
     if (displayNotification_) UnregisterPowerSettingNotification(displayNotification_);
     displayNotification_ = nullptr;
-    Shell_NotifyIconW(NIM_DELETE, &icon_);
+    vitool_tray::NotifyIcon(NIM_DELETE, &icon_);
     DestroyWindow(window_);
 }
 
@@ -358,6 +359,7 @@ LRESULT CALLBACK TrayApp::WindowProc(HWND window, UINT message, WPARAM wParam, L
 }
 
 LRESULT TrayApp::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
+    if (vitool_tray::HandleMessage(message, wParam)) return 0;
     if (message == taskbarCreatedMessage_ && taskbarCreatedMessage_ != 0) {
         // Explorer restarted: a new taskbar, so the taskbar view moves into it.
         AddTrayIcon();
