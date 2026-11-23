@@ -137,6 +137,8 @@ Future updates to improve features or the interface are not ruled out.
 
 [MIT](LICENSE) © VitomDev
 
+The names and logos are not covered by the license: see [TRADEMARKS.md](TRADEMARKS.md). 💸 Vela is free: if you paid for it, you were scammed. Get it only from GitHub or Vitool Box.
+
 ---
 
 ## 📲 Contact
